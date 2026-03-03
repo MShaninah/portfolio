@@ -1,0 +1,86 @@
+{
+  "profile": {
+    "email": "me@example.com",
+    "phone": null
+  },
+  "skills": [
+    "PHP",
+    "Symfony",
+    "Drupal",
+    "SQL",
+    "Python",
+    "ASR",
+    "faster-whisper",
+    "Docker",
+    "Testing",
+    "Linux"
+  ],
+  "publications": [],
+  "projects": [
+    {
+      "id": "genehub",
+      "title": "GeneHub",
+      "tagline": "Arabic ASR + keyword extraction (Syrian dialect friendly)",
+      "summary": "A production-oriented speech-to-text component that converts spoken queries into structured keywords for a services search app.",
+      "highlights": [
+        "Fast inference pipeline (GPU-ready), tuned VAD and post-processing",
+        "Dataset tooling: segmentation + CSV mapping for fine-tuning",
+        "Keyword extraction tailored to local areas & services"
+      ],
+      "stack": ["Python", "faster-whisper", "NLP", "VAD", "Datasets"],
+      "links": [
+        { "label": "Repo", "href": "#" },
+        { "label": "Demo", "href": "#" }
+      ],
+      "year": "2026",
+      "category": "AI"
+    },
+    {
+      "id": "jitak",
+      "title": "Jitak",
+      "tagline": "Multi-role delivery platform backend (Symfony)",
+      "summary": "A backend-first platform emphasizing modular domains, role-aware auth, testability, and clean API boundaries.",
+      "highlights": [
+        "JWT + refresh token flow; role-aware APIs",
+        "CQRS-style handlers; strong test loop via in-memory stores",
+        "Order lifecycle & state transitions with clear domain rules"
+      ],
+      "stack": ["PHP", "Symfony", "JWT", "CQRS", "Testing"],
+      "links": [
+        { "label": "Architecture", "href": "#" },
+        { "label": "Repo", "href": "#" }
+      ],
+      "year": "2025–2026",
+      "category": "Backend"
+    },
+    {
+      "id": "enterprise",
+      "title": "Enterprise Systems",
+      "tagline": "adesso — Symfony/Drupal delivery & refactoring",
+      "summary": "Professional work focused on feature delivery, stability, and refactoring in complex production codebases.",
+      "highlights": [
+        "Refactored legacy code paths and improved stability",
+        "Delivered features with stakeholder alignment",
+        "Pragmatic bug fixing and maintainability improvements"
+      ],
+      "stack": ["Drupal", "Symfony", "PHP", "SQL", "Linux"],
+      "links": [ { "label": "LinkedIn", "href": "#" } ],
+      "year": "2022–2025",
+      "category": "Enterprise"
+    },
+    {
+      "id": "smart-room",
+      "title": "Smart Room Focus Engine",
+      "tagline": "Arduino sensors + feedback loop",
+      "summary": "A small IoT prototype combining sensors and UI feedback to support focus habits and room awareness.",
+      "highlights": [
+        "Sensor integration + basic rule engine",
+        "LCD UI feedback and reproducible wiring setup"
+      ],
+      "stack": ["Arduino", "Sensors", "Embedded"],
+      "links": [ { "label": "Notes", "href": "#" } ],
+      "year": "2024",
+      "category": "IoT"
+    }
+  ]
+}
