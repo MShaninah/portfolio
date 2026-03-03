@@ -1,25 +1,82 @@
-
 services:
-###> doctrine/doctrine-bundle ###
-  database:
-    image: postgres:${POSTGRES_VERSION:-16}-alpine
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-app}
-      # You should definitely change the password in production
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-!ChangeMe!}
-      POSTGRES_USER: ${POSTGRES_USER:-app}
-    healthcheck:
-      test: ["CMD", "pg_isready", "-d", "${POSTGRES_DB:-app}", "-U", "${POSTGRES_USER:-app}"]
-      timeout: 5s
-      retries: 5
-      start_period: 60s
+  nginx:
+    image: nginx:alpine
+    depends_on:
+      - php-fpm
+    ports:
+      - "8080:80"
     volumes:
-      - database_data:/var/lib/postgresql/data:rw
-      # You may use a bind-mounted host directory instead, so that it is harder to accidentally remove the volume and lose all your data!
-      # - ./docker/db/data:/var/lib/postgresql/data:rw
-###< doctrine/doctrine-bundle ###
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./:/project:ro
+    restart: unless-stopped
+    networks:
+      - portfolio_local
+
+  db:
+    image: mysql:8.0.36
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: portfolio
+      MYSQL_USER: portfolio
+      MYSQL_PASSWORD: portfolio
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "6606:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+    networks:
+      - portfolio_local
+
+  php-fpm:
+    build:
+      context: docker/php
+    restart: unless-stopped
+    depends_on:
+      - db
+      - mailhog
+    expose:
+      - "9000"
+    volumes:
+      - ./:/project
+    working_dir: /project
+    environment:
+      APP_ENV: dev
+      APP_DEBUG: "1"
+      # Symfony DB + Mail DSNs inside docker network
+      DATABASE_URL: "mysql://portfolio:portfolio@db:3306/portfolio?serverVersion=8.0"
+      MAILER_DSN: "smtp://mailhog:1025"
+      CONTACT_TO: "Shaninah.mohammad@gmail.com"
+      CONTACT_FROM: "no-reply@localhost"
+      # Optional if you have custom ini files
+      PHP_INI_SCAN_DIR: ":/usr/local/etc/php/custom.d"
+    networks:
+      - portfolio_local
+
+  php-cli:
+    build:
+      context: docker/php-cli
+    restart: unless-stopped
+    depends_on:
+      - db
+      - mailhog
+    volumes:
+      - ./:/project
+    working_dir: /project
+    entrypoint: ["/bin/sh", "-lc"]
+    networks:
+      - portfolio_local
+
+  mailhog:
+    image: mailhog/mailhog:latest
+    restart: unless-stopped
+    ports:
+      - "1025:1025"   # SMTP
+      - "8025:8025"   # Web UI
+    networks:
+      - portfolio_local
+
+networks:
+  portfolio_local:
 
 volumes:
-###> doctrine/doctrine-bundle ###
-  database_data:
-###< doctrine/doctrine-bundle ###
+  db_data:
