@@ -5,7 +5,6 @@ namespace App\Service;
 
 use App\Repository\ProfileRepository;
 use App\Repository\ProjectRepository;
-use App\Repository\PublicationRepository;
 use App\Repository\SkillRepository;
 use App\Entity\Profile;
 use Symfony\Component\Serializer\Exception\ExceptionInterface;
@@ -16,7 +15,6 @@ final readonly class PortfolioManager
     public function __construct(
         private ProfileRepository     $profiles,
         private SkillRepository       $skills,
-        private PublicationRepository $publications,
         private ProjectRepository     $projects,
         private NormalizerInterface   $normalizer, // Use Normalizer to convert objects to arrays
     ) {}
@@ -28,7 +26,6 @@ final readonly class PortfolioManager
     {
         $profile = $this->profiles->findOneBy([]) ?? new Profile();
         $skills = $this->skills->findBy([], ['name' => 'ASC']);
-        $publications = $this->publications->findBy([], ['year' => 'DESC', 'id' => 'DESC']);
         $projects = $this->projects->findBy([], ['id' => 'DESC']);
         $context = ['groups' => 'portfolio:read'];
         $projectContext = ['groups' => 'project:read'];
@@ -36,7 +33,6 @@ final readonly class PortfolioManager
         return [
             'profile'      => $this->normalizer->normalize($profile, null, $context),
             'skills'       => array_map(static fn($s) => $s->getName(), $skills),
-            'publications' => $this->normalizer->normalize($publications, null, $context),
             'projects'     => $this->normalizer->normalize($projects, null, $projectContext),
         ];
     }
