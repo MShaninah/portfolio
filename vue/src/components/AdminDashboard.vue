@@ -214,9 +214,6 @@ async function delProject(id: string) {
   await refresh()
 }
 
-function go(id: string) {
-  // in admin we can simply scroll or ignore
-}
 
 onMounted(async () => {
   token.value = getToken()

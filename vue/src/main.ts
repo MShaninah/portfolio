@@ -6,13 +6,11 @@ import { i18n } from "./i18n"
 
 const app = createApp(App)
 
-// Global directive: v-reveal — fades elements in when they enter the viewport
 app.directive("reveal", {
   mounted(el: HTMLElement) {
     const prefersReduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (prefersReduced) return
 
-    // Ensure initial hidden state
     el.classList.add('reveal-init')
 
     const observer = new IntersectionObserver((entries, obs) => {

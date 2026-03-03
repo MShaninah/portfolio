@@ -4,8 +4,10 @@ export type PortfolioResponse = {
     publications: any[]
 }
 
+import { apiUrl } from './http'
+
 export async function getPortfolio(lang: "en" | "de"): Promise<PortfolioResponse> {
-    const res = await fetch(`/api/portfolio?lang=${lang}`, {
+    const res = await fetch(apiUrl(`/api/portfolio?lang=${lang}`), {
         headers: { Accept: "application/json" },
     })
     if (!res.ok) throw new Error(`API error: ${res.status}`)

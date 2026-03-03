@@ -72,7 +72,6 @@
           </div>
         </section>
 
-        <!-- ABOUT -->
         <section id="about" v-reveal class="mx-auto max-w-6xl px-4 py-12">
           <SectionKicker title="About Me" subtitle="Get to know the person behind the code" />
 
@@ -115,7 +114,7 @@
                     </div>
                   </div>
 
-                  <button class="btn-outline w-full" @click="alert('Hook this to your CV PDF URL')">
+                  <button class="btn-outline w-full" @click="">
                     <Download class="mr-2 h-4 w-4" /> Download Resume
                   </button>
                 </div>
@@ -146,7 +145,6 @@
           </div>
         </section>
 
-        <!-- SKILLS -->
         <section id="skills" v-reveal class="mx-auto max-w-6xl px-4 py-12">
           <SectionKicker
               title="Skills & Technologies"
@@ -196,7 +194,6 @@
             </div>
           </div>
         </section>
-        <!-- PROJECTS -->
         <section id="projects" v-reveal class="mx-auto max-w-6xl px-4 py-12">
           <SectionKicker title="Projects" subtitle="Selected work" />
 
@@ -221,7 +218,6 @@
           </div>
         </section>
 
-        <!-- CONTACT -->
         <section id="contact" v-reveal class="mx-auto max-w-6xl px-4 py-14">
           <SectionKicker title="Get In Touch" subtitle="Contact" />
 
@@ -293,7 +289,6 @@ import {getPortfolio} from "./api/portfolio"
 import { getToken } from "./api/admin"
 
 import {ArrowUpRight, Copy, Download, Github, Linkedin, Mail, MapPin, Phone,} from "lucide-vue-next";
-// Local components extracted into SFCs
 import NeonBG from './components/NeonBG.vue'
 import GlassCard from './components/GlassCard.vue'
 import SectionKicker from './components/SectionKicker.vue'
@@ -303,14 +298,11 @@ import ProjectCard from './components/ProjectCard.vue'
 import ProjectDetail from './components/ProjectDetail.vue'
 import AdminDashboard from './components/AdminDashboard.vue'
 
-// Light/Dark theme state
 const THEME_KEY = 'theme'
 const isLight = ref(false)
 
-// Admin mode visibility
 const isAdmin = ref(false)
 
-// Route flag to show Admin login when visiting /login
 const isLoginRoute = ref(false)
 
 onMounted(() => {
@@ -327,7 +319,6 @@ onMounted(() => {
     }
   }
 
-  // Initialize admin mode from stored token
   try { isAdmin.value = !!getToken() } catch { isAdmin.value = false }
 
   const onToken = (e: any) => { isAdmin.value = !!e?.detail }
@@ -375,7 +366,7 @@ let isDeleting = false;
 const typeSpeed = 150;
 
 const type = () => {
-  const currentFullText = titles[titleIndex];
+  const currentFullText: string = titles[titleIndex] ?? "";
 
   if (isDeleting) {
     currentText.value = currentFullText.substring(0, charIndex - 1);
@@ -507,31 +498,6 @@ function scrollTo(id: string) {
   const el = document.getElementById(id);
   if (!el) return;
   el.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-// Scroll down to the next visible section on the page
-function scrollDown() {
-  const order = ['home', 'about', 'skills', 'projects', 'contact'] as const;
-  const currentY = typeof window !== 'undefined' ? (window.scrollY || window.pageYOffset || 0) : 0;
-
-  // Gather section elements with their top positions
-  const sections = order
-    .map((id) => {
-      const el = document.getElementById(id);
-      if (!el) return null;
-      const top = el.offsetTop ?? 0;
-      return { id, el, top } as const;
-    })
-    .filter(Boolean) as { id: string; el: HTMLElement; top: number }[];
-
-  if (sections.length === 0) return;
-
-  // Find the first section below the current scroll position (with a small epsilon)
-  const epsilon = 8;
-  const next = sections.find((s) => s.top > currentY + epsilon);
-
-  const target = next ?? sections[sections.length - 1];
-  target.el.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 function open(url: string) {

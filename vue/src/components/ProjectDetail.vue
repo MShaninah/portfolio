@@ -85,7 +85,7 @@ import { ArrowLeft, ArrowUpRight } from 'lucide-vue-next'
 
 function open(href: string) { window.open(href, '_blank') }
 
-interface Link { label: string; href: string; icon: any }
+interface Link { label: string; href: string; icon?: any }
 interface Project {
   id: string
   title: string

@@ -5,6 +5,8 @@ export type AdminPortfolio = {
   skills?: string[]
 }
 
+import { apiUrl } from './http'
+
 const TOKEN_KEY = 'admin_token'
 
 export function getToken(): string | null {
@@ -19,13 +21,13 @@ export function setToken(token: string | null) {
   try { window.dispatchEvent(new CustomEvent('admin-token', { detail: token })) } catch {}
 }
 
-function authHeader() {
+function authHeader(): Record<string, string> {
   const t = getToken()
-  return t ? { Authorization: `Bearer ${t}` } : {}
+  return t ? { Authorization: `Bearer ${t}` } : ({} as Record<string, string>)
 }
 
 export async function adminLogin(password: string): Promise<string> {
-  const res = await fetch('/api/admin/login', {
+  const res = await fetch(apiUrl('/api/admin/login'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ password })
@@ -38,14 +40,14 @@ export async function adminLogin(password: string): Promise<string> {
 }
 
 export async function adminFetch(): Promise<AdminPortfolio> {
-  const res = await fetch('/api/admin/portfolio', { headers: { Accept: 'application/json', ...authHeader() } })
+  const res = await fetch(apiUrl('/api/admin/portfolio'), { headers: { Accept: 'application/json', ...authHeader() } })
   if (res.status === 401) throw new Error('Unauthorized')
   if (!res.ok) throw new Error(`API ${res.status}`)
   return res.json()
 }
 
 export async function adminUpdateProfile(payload: { email: string; phone?: string }): Promise<AdminPortfolio['profile']> {
-  const res = await fetch('/api/admin/profile', {
+  const res = await fetch(apiUrl('/api/admin/profile'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeader() },
     body: JSON.stringify(payload)
@@ -56,7 +58,7 @@ export async function adminUpdateProfile(payload: { email: string; phone?: strin
 }
 
 export async function adminSetSkills(skills: string[]): Promise<string[]> {
-  const res = await fetch('/api/admin/skills', {
+  const res = await fetch(apiUrl('/api/admin/skills'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeader() },
     body: JSON.stringify({ skills })
@@ -67,7 +69,7 @@ export async function adminSetSkills(skills: string[]): Promise<string[]> {
 }
 
 export async function adminAddProject(project: any): Promise<any> {
-  const res = await fetch('/api/admin/projects', {
+  const res = await fetch(apiUrl('/api/admin/projects'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeader() },
     body: JSON.stringify(project)
@@ -77,7 +79,7 @@ export async function adminAddProject(project: any): Promise<any> {
 }
 
 export async function adminUpdateProject(id: string, patch: any): Promise<void> {
-  const res = await fetch(`/api/admin/projects/${encodeURIComponent(id)}`, {
+  const res = await fetch(apiUrl(`/api/admin/projects/${encodeURIComponent(id)}`), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeader() },
     body: JSON.stringify(patch)
@@ -86,7 +88,7 @@ export async function adminUpdateProject(id: string, patch: any): Promise<void> 
 }
 
 export async function adminDeleteProject(id: string): Promise<void> {
-  const res = await fetch(`/api/admin/projects/${encodeURIComponent(id)}`, {
+  const res = await fetch(apiUrl(`/api/admin/projects/${encodeURIComponent(id)}`), {
     method: 'DELETE',
     headers: { Accept: 'application/json', ...authHeader() }
   })
