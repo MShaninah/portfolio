@@ -24,7 +24,7 @@
             </h1>
 
             <p class="mt-3 max-w-3xl text-sm sm:text-base leading-relaxed text-white/70">
-              SPECIALIZING IN CLEAN APIs, AUTH FLOWS, AND DATABASE-DRIVEN BACKEND SYSTEMS.
+              SPECIALIZING IN CLEAN APIs, CLEAN AUTH FLOWS, AND SCALABLE BACKEND ARCHITECTURE.
             </p>
 
             <div class="mt-6 flex flex-wrap items-center gap-3">
