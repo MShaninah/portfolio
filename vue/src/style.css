@@ -96,6 +96,35 @@ button:focus-visible {
   filter: invert(1) hue-rotate(180deg);
 }
 
+.theme-invert button,
+.theme-invert .btn-primary,
+.theme-invert .btn-outline,
+.theme-invert .btn-ghost,
+.theme-invert .btn-icon,
+.theme-invert .btn-pill,
+.theme-invert .btn-pill-active,
+.theme-invert .badge-outline,
+.theme-invert .badge-secondary,
+.theme-invert .input,
+.theme-invert .textarea,
+.theme-invert .lang-switch,
+.theme-invert .home,
+.theme-invert .group:hover .btn-outline,
+.theme-invert .group:hover .btn-icon {
+  filter: invert(0) hue-rotate(180deg);
+}
+.theme-invert .btn-primary svg,
+.theme-invert .btn-outline svg,
+.theme-invert .btn-ghost svg,
+.theme-invert .btn-icon svg,
+.theme-invert .btn-pill svg,
+.theme-invert .btn-pill-active svg,
+.theme-invert .badge-outline svg,
+.theme-invert .badge-secondary svg,
+.theme-invert .lang-switch svg {
+  filter: none;
+}
+
 @media (prefers-color-scheme: light) {
   :root {
     color: #213547;

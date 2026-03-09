@@ -30,7 +30,6 @@ export const i18n = createI18n({
     messages: { en, de },
 })
 
-// Persist whenever locale changes (and set <html lang>)
 watch(
     i18n.global.locale,
     (val) => {

@@ -2,7 +2,6 @@
   <div :class="['min-h-screen bg-black text-white', isLight ? 'theme-invert' : '']">
     <TopNav @nav="scrollTo" :is-light="isLight" @toggle-theme="toggleTheme" />
     <NeonBG />
-    <RatingPill />
 
     <div v-if="isAdmin || isLoginRoute">
       <AdminDashboard :is-light="isLight" @toggle-theme="toggleTheme" />
@@ -256,18 +255,27 @@
 
                 <div class="lg:col-span-2">
                   <div class="text-sm font-semibold text-white">Send a Message</div>
-                  <div class="mt-4 space-y-3">
+                  <form class="mt-4 space-y-3" @submit.prevent="onSubmitContact" novalidate>
                     <div class="grid gap-3 sm:grid-cols-2">
-                      <input class="input" placeholder="Name *" />
-                      <input class="input" placeholder="Email *" />
+                      <input class="input" placeholder="Name *" v-model.trim="cName" name="name" autocomplete="name" required />
+                      <input class="input" placeholder="Email *" v-model.trim="cEmail" name="email" type="email" autocomplete="email" required />
                     </div>
-                    <input class="input" placeholder="Subject *" />
-                    <textarea class="textarea" placeholder="Message *"></textarea>
+                    <input class="input" placeholder="Subject *" v-model.trim="cSubject" name="subject" required />
+                    <textarea class="textarea" placeholder="Message *" v-model.trim="cMessage" name="message" required></textarea>
 
-                    <div class="flex justify-end">
-                      <button class="btn-primary">Send Message</button>
+                    <input class="sr-only" tabindex="-1" autocomplete="off" aria-hidden="true" v-model="cCompany" name="company" />
+
+                    <div class="flex items-center justify-between gap-3">
+                      <div class="text-xs text-white/60" role="status" aria-live="polite">
+                        <span v-if="sent && !sending && !cError">Message sent. Thank you!</span>
+                        <span v-else-if="cError">{{ cError }}</span>
+                      </div>
+                      <button class="btn-primary disabled:opacity-60" :disabled="sending || !isContactValid">
+                        <span v-if="sending">Sending…</span>
+                        <span v-else>Send Message</span>
+                      </button>
                     </div>
-                  </div>
+                  </form>
                 </div>
               </div>
             </div>
@@ -287,16 +295,26 @@ import {computed, markRaw, onMounted, ref, watch} from "vue";
 import {i18n} from "./i18n";
 import {getPortfolio} from "./api/portfolio"
 import { getToken } from "./api/admin"
+import { sendContact } from "./api/contact"
 
 import {ArrowUpRight, Copy, Download, Github, Linkedin, Mail, MapPin, Phone,} from "lucide-vue-next";
 import NeonBG from './components/NeonBG.vue'
 import GlassCard from './components/GlassCard.vue'
 import SectionKicker from './components/SectionKicker.vue'
 import TopNav from './components/TopNav.vue'
-import RatingPill from './components/RatingPill.vue'
 import ProjectCard from './components/ProjectCard.vue'
 import ProjectDetail from './components/ProjectDetail.vue'
 import AdminDashboard from './components/AdminDashboard.vue'
+
+// Contact form state
+const cName = ref('')
+const cEmail = ref('')
+const cSubject = ref('')
+const cMessage = ref('')
+const cCompany = ref('') // honeypot
+const sending = ref(false)
+const sent = ref(false)
+const cError = ref<string | null>(null)
 
 const THEME_KEY = 'theme'
 const isLight = ref(false)
@@ -364,6 +382,43 @@ let titleIndex = 0;
 let charIndex = 0;
 let isDeleting = false;
 const typeSpeed = 150;
+
+const isEmail = (v: string) => /.+@.+\..+/.test(v)
+const isContactValid = computed(() =>
+  cName.value.trim().length > 0 &&
+  isEmail(cEmail.value) &&
+  cSubject.value.trim().length > 0 &&
+  cMessage.value.trim().length >= 10
+)
+
+async function onSubmitContact() {
+  cError.value = null
+  sent.value = false
+  if (!isContactValid.value) {
+    cError.value = 'Please fill all required fields correctly.'
+    return
+  }
+  try {
+    sending.value = true
+    await sendContact({
+      name: cName.value,
+      email: cEmail.value,
+      subject: cSubject.value,
+      message: cMessage.value,
+      company: cCompany.value || undefined,
+    })
+    sent.value = true
+    cName.value = ''
+    cEmail.value = ''
+    cSubject.value = ''
+    cMessage.value = ''
+    cCompany.value = ''
+  } catch (e: any) {
+    cError.value = e?.message || 'Failed to send message.'
+  } finally {
+    sending.value = false
+  }
+}
 
 const type = () => {
   const currentFullText: string = titles[titleIndex] ?? "";

@@ -4,6 +4,7 @@ export default {
     skills: "Skills",
     projects: "Projects",
     contact: "Contact",
+    home: "Home",
   },
   hero: {
     subtitle: "SPECIALIZING IN CLEAN APIs, AUTH FLOWS, AND DATABASE-DRIVEN BACKEND SYSTEMS.",
