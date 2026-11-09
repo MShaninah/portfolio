@@ -1,0 +1,245 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Deploys are never cancelled mid-flight, and only one runs at a time.
+concurrency:
+  group: cd-production
+  cancel-in-progress: false
+
+jobs:
+  # The full CI gate must pass before anything is published or deployed.
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publish images to GHCR
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      api_image: ${{ steps.meta.outputs.api_image }}
+      web_image: ${{ steps.meta.outputs.web_image }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Compute image names and tag
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          # GHCR rejects uppercase paths and the owner here is "MShaninah".
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          tag="${GITHUB_SHA::12}"
+          {
+            echo "tag=$tag"
+            echo "api_image=ghcr.io/$owner/portfolio-api"
+            echo "web_image=ghcr.io/$owner/portfolio-web"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push API image
+        id: push_api
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/php/Dockerfile.prod
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.api_image }}:${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.api_image }}:latest
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      - name: Build and push web image
+        id: push_web
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/nginx/Dockerfile.prod
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.web_image }}:${{ steps.meta.outputs.tag }}
+            ${{ steps.meta.outputs.web_image }}:latest
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+
+      # Records where and how each image was built, so the server can be shown
+      # to be running something this repository actually produced.
+      - name: Attest API image provenance
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ steps.meta.outputs.api_image }}
+          subject-digest: ${{ steps.push_api.outputs.digest }}
+          push-to-registry: true
+
+      - name: Attest web image provenance
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ steps.meta.outputs.web_image }}
+          subject-digest: ${{ steps.push_web.outputs.digest }}
+          push-to-registry: true
+
+  deploy:
+    name: Deploy to production
+    needs: publish
+    runs-on: ubuntu-latest
+    # Add required reviewers to this environment in repository settings to gate
+    # releases behind a manual approval.
+    environment:
+      name: production
+      url: ${{ vars.SITE_BASE_URL || 'https://mshaninah.com' }}
+    steps:
+      - name: Configure SSH
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Pinned from a secret rather than ssh-keyscan: accepting whatever key
+          # the host happens to present would defeat the point.
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Pull, migrate and restart
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+          DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
+          IMAGE_TAG: ${{ needs.publish.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" -o BatchMode=yes \
+            "$SSH_USER@$SSH_HOST" \
+            "DEPLOY_DIR='$DEPLOY_DIR' IMAGE_TAG='$IMAGE_TAG' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$DEPLOY_DIR"
+          export IMAGE_TAG
+          compose() { docker compose -f compose.prod.yaml "$@"; }
+
+          # Remember what is running now, so the rollback step has a target.
+          running_id="$(compose ps -q php-fpm 2>/dev/null || true)"
+          if [ -n "$running_id" ]; then
+            docker inspect --format '{{.Config.Image}}' "$running_id" \
+              | sed 's/.*://' > .previous_image_tag
+          fi
+          echo "deploying $IMAGE_TAG (previous: $(cat .previous_image_tag 2>/dev/null || echo none))"
+
+          compose pull
+          compose up -d db
+
+          # Migrate with the new image in a throwaway container, before the
+          # serving containers are replaced.
+          compose run --rm php-fpm \
+            php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration
+
+          compose up -d --remove-orphans
+          docker image prune -f --filter 'until=168h'
+          REMOTE
+
+      - name: Wait for the stack to answer
+        env:
+          SITE_BASE: ${{ vars.SITE_BASE_URL || 'https://mshaninah.com' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 10 "$SITE_BASE/healthz" >/dev/null 2>&1; then
+              echo "healthy after ${i}s"; exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::stack did not become healthy within 60s"
+          exit 1
+
+      - name: Smoke test
+        env:
+          API_BASE: ${{ vars.API_BASE_URL || 'https://api.mshaninah.com' }}
+          SITE_BASE: ${{ vars.SITE_BASE_URL || 'https://mshaninah.com' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          probe() {
+            local name=$1 url=$2 want=$3 method=${4:-GET} data=${5:-}
+            local code
+            if [ -n "$data" ]; then
+              code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 \
+                     -X "$method" -H 'Content-Type: application/json' -d "$data" "$url")
+            else
+              code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 -X "$method" "$url")
+            fi
+            if [ "$code" != "$want" ]; then
+              echo "::error::$name: expected HTTP $want, got $code ($url)"
+              return 1
+            fi
+            echo "ok  $name -> $code"
+          }
+
+          probe 'frontend served'   "$SITE_BASE/"                   200
+          probe 'public portfolio'  "$API_BASE/api/portfolio"       200
+          probe 'public projects'   "$API_BASE/api/projects"        200
+          probe 'unknown project'   "$API_BASE/api/projects/nope"   404
+          probe 'admin is guarded'  "$API_BASE/api/admin/portfolio" 401
+
+          # This one is load-bearing. Symfony resolves %env()% lazily, so a
+          # missing ADMIN_PASSWORD_HASH does NOT fail the build or the boot --
+          # it surfaces as a 500 the first time a credential is verified. A 401
+          # here proves the secret is present and verification actually ran.
+          probe 'login rejects bad password' "$API_BASE/api/admin/login" 401 \
+                POST '{"password":"ci-smoke-deliberately-wrong"}'
+
+      - name: Roll back to the previous image
+        if: failure()
+        env:
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+          DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::warning::deploy or smoke test failed - rolling back"
+          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" -o BatchMode=yes \
+            "$SSH_USER@$SSH_HOST" "DEPLOY_DIR='$DEPLOY_DIR' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$DEPLOY_DIR"
+          if [ ! -s .previous_image_tag ]; then
+            echo "no previous tag recorded; leaving the stack as it is"
+            exit 0
+          fi
+          IMAGE_TAG="$(cat .previous_image_tag)"
+          export IMAGE_TAG
+          echo "rolling back to $IMAGE_TAG"
+          docker compose -f compose.prod.yaml up -d --remove-orphans
+          REMOTE
+          # NOTE: database migrations are NOT reversed. Rolling the schema back
+          # is a deliberate, manual decision:
+          #   docker compose -f compose.prod.yaml run --rm php-fpm \
+          #     php bin/console doctrine:migrations:migrate prev
+          echo "::error::rolled back; the schema was left migrated"
+          exit 1

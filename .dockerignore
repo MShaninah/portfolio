@@ -1,0 +1,32 @@
+# Build context exclusions for the production images.
+# NOTE: docker/ and vue/ must stay IN the context -- the nginx image copies its
+# config from docker/nginx/ and builds the frontend from vue/.
+
+.git
+.github
+.idea
+.editorconfig
+
+# Installed fresh inside the image.
+vendor
+var
+vue/node_modules
+vue/dist
+
+# Dev/CI-only.
+tests
+phpunit.dist.xml
+phpstan.dist.neon
+.php-cs-fixer.dist.php
+.php-cs-fixer.cache
+compose.yaml
+compose.prod.yaml
+*.md
+
+# Never ship local secrets or data dumps.
+.env.local
+.env.*.local
+*.sql
+*.sql.gz
+db_dump*
+config/portfolio.seed.json

@@ -1,0 +1,87 @@
+# syntax=docker/dockerfile:1
+
+# Production image for the Symfony API (php-fpm).
+#
+# Differs from docker/php/Dockerfile, which is the DEV image: that one mounts
+# the source from the host and ships no application code.
+
+# --------------------------------------------------------------------------
+# base: the PHP runtime plus the extensions the app needs, nothing else.
+# Build headers are installed in a virtual package and removed again, so they
+# never reach the final image.
+# --------------------------------------------------------------------------
+FROM php:8.5.12-fpm-alpine AS base
+
+RUN set -eux; \
+    # NOTE: in php:8.5.x both PDO and Zend OPcache are already compiled in.
+    # Passing them to docker-php-ext-install builds no shared module and the
+    # step fails with "cp: can't stat 'modules/*'".
+    apk add --no-cache icu-libs libzip; \
+    apk add --no-cache --virtual .build-deps $PHPIZE_DEPS icu-dev libzip-dev; \
+    docker-php-ext-configure intl; \
+    docker-php-ext-install -j"$(nproc)" intl zip pdo_mysql; \
+    apk del .build-deps
+
+WORKDIR /app
+
+# --------------------------------------------------------------------------
+# build: install production dependencies and warm the prod cache.
+# --------------------------------------------------------------------------
+FROM base AS build
+
+RUN apk add --no-cache git unzip
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
+
+ENV COMPOSER_ALLOW_SUPERUSER=1 \
+    COMPOSER_NO_INTERACTION=1
+
+# Dependencies first, so editing application code does not invalidate this
+# layer. --no-scripts because the app code is not present yet; --no-autoloader
+# because the classmap is generated below, once src/ exists.
+COPY composer.json composer.lock symfony.lock ./
+RUN composer install \
+      --no-dev --no-scripts --no-autoloader \
+      --prefer-dist --no-progress
+
+# Copied explicitly rather than with `COPY . .`: this is what keeps tests/,
+# vue/ and any stray local file out of the runtime image.
+COPY bin bin
+COPY config config
+COPY migrations migrations
+COPY public public
+COPY src src
+COPY .env ./
+
+RUN composer dump-autoload --no-dev --optimize --classmap-authoritative
+
+# Warming the cache here means the container starts ready to serve. It needs no
+# secrets: Symfony keeps %env()% values as runtime placeholders, so APP_SECRET,
+# ADMIN_PASSWORD_HASH and friends are read when the container runs, not now.
+RUN APP_ENV=prod APP_DEBUG=0 php bin/console cache:warmup --env=prod \
+ && chown -R www-data:www-data var
+
+# --------------------------------------------------------------------------
+# runtime: the application, without composer, git or any build tooling.
+# --------------------------------------------------------------------------
+FROM base AS runtime
+
+COPY docker/php/conf.d/prod.ini /usr/local/etc/php/conf.d/zz-prod.ini
+COPY --from=build --chown=www-data:www-data /app /app
+
+ENV APP_ENV=prod \
+    APP_DEBUG=0
+
+# var/ is the only path the application writes to (logs, cache pools, and the
+# rate limiter's storage).
+RUN set -eux; \
+    mkdir -p var/cache var/log; \
+    chown -R www-data:www-data var
+
+# php-fpm's own worker user is www-data; the master stays root so it can read
+# the config and drop privileges, which is also what opcache.preload_user needs.
+EXPOSE 9000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD php -r 'exit(@fsockopen("127.0.0.1", 9000) ? 0 : 1);'
+
+CMD ["php-fpm"]

@@ -1,0 +1,59 @@
+# Production stack. Images are pulled from GHCR; nothing is built on the server.
+#
+# On the server:
+#   export IMAGE_TAG=<git-sha>
+#   docker compose -f compose.prod.yaml pull
+#   docker compose -f compose.prod.yaml up -d
+#
+# Two separate env files on purpose: the database container has no business
+# holding APP_SECRET or the admin password hash.
+#   .env.prod     -> application (APP_SECRET, ADMIN_PASSWORD_HASH, DATABASE_URL, ...)
+#   .env.prod.db  -> MySQL only  (MYSQL_DATABASE, MYSQL_USER, MYSQL_PASSWORD, ...)
+
+name: portfolio
+
+services:
+  web:
+    image: ghcr.io/mshaninah/portfolio-web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    # Bound to loopback: TLS for mshaninah.com / api.mshaninah.com is terminated
+    # by the reverse proxy already running on the host, which forwards here.
+    # With no such proxy, change this to "80:80" and add TLS another way.
+    ports:
+      - "127.0.0.1:8080:80"
+    depends_on:
+      php-fpm:
+        condition: service_started
+    networks: [portfolio]
+
+  php-fpm:
+    image: ghcr.io/mshaninah/portfolio-api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [portfolio]
+
+  db:
+    image: mysql:8.0.36
+    restart: unless-stopped
+    env_file:
+      - .env.prod.db
+    volumes:
+      - db_data:/var/lib/mysql
+    # php-fpm waits on this, so a cold start cannot race the first migration.
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks: [portfolio]
+
+networks:
+  portfolio:
+
+volumes:
+  db_data:

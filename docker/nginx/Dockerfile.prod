@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1
+
+# Production web image: nginx plus the compiled Vue SPA.
+#
+# The frontend is baked in rather than copied to the server separately, so a
+# deploy is just `docker compose pull && up -d` and a rollback is re-pulling an
+# earlier tag -- image and frontend can never drift apart.
+
+# --------------------------------------------------------------------------
+# frontend: typecheck and build the SPA.
+# --------------------------------------------------------------------------
+FROM node:24.22.2-alpine AS frontend
+
+WORKDIR /src
+
+# Lockfile first so dependency installation is cached independently of source.
+COPY vue/package.json vue/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+COPY vue/ ./
+
+# `npm run build` is `vue-tsc -b && vite build`, so a type error fails the
+# image build rather than shipping broken output.
+RUN npm run build
+
+# --------------------------------------------------------------------------
+# runtime
+# --------------------------------------------------------------------------
+FROM nginx:1.31.8-alpine AS runtime
+
+COPY docker/nginx/security-headers.conf /etc/nginx/snippets/security-headers.conf
+COPY docker/nginx/default.prod.conf /etc/nginx/conf.d/default.conf
+COPY --from=frontend /src/dist /usr/share/nginx/html
+
+# The config is NOT validated here: it names the `php-fpm` upstream, which only
+# resolves on the compose network, and nginx resolves upstream hostnames when it
+# loads the config. CI validates it instead, stubbing the host:
+#   docker run --add-host php-fpm:127.0.0.1 <image> nginx -t
+#
+# At runtime compose's `depends_on: php-fpm` guarantees the name resolves before
+# nginx starts.
+
+EXPOSE 80
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD wget -qO- http://127.0.0.1/healthz >/dev/null 2>&1 || exit 1

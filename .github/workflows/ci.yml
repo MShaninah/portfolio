@@ -1,0 +1,208 @@
+name: CI
+
+# main is deliberately NOT a push trigger: pushes to main run through cd.yml,
+# which calls this workflow via workflow_call. Triggering both would run the
+# whole gate twice for every release.
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_call:
+
+permissions:
+  contents: read
+
+# github.workflow is the CALLER's name inside a reusable workflow, so a CD-
+# invoked run lands in a different group and can never cancel a real CI run.
+concurrency:
+  group: ${{ github.workflow }}-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Matches the floor in composer.json: these are the php2shell-patched
+  # releases (CVE-2026-109618 / CVE-2026-109619).
+  PHP_VERSION: '8.5'
+
+jobs:
+  quality:
+    name: Quality gate (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # composer.json allows both branches, so both are tested.
+        php: ['8.4', '8.5']
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          # pdo_sqlite: the test suite runs on SQLite (see .env.test).
+          extensions: intl, zip, pdo_sqlite, pdo_mysql
+          coverage: none
+          tools: composer:v2
+
+      - name: Validate composer.json and lock file
+        run: composer validate --strict --no-check-publish
+
+      - name: Resolve composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> "$GITHUB_OUTPUT"
+
+      # Only composer's download cache is cached. Caching vendor/ itself causes
+      # stale-install bugs.
+      - name: Cache composer downloads
+        uses: actions/cache@v6
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-php${{ matrix.php }}-${{ hashFiles('composer.lock') }}
+          restore-keys: composer-${{ runner.os }}-php${{ matrix.php }}-
+
+      - name: Install dependencies
+        run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Security advisories
+        run: composer audit
+
+      - name: Coding standards
+        run: vendor/bin/php-cs-fixer fix --config=.php-cs-fixer.dist.php --dry-run --diff
+        env:
+          PHP_CS_FIXER_IGNORE_ENV: '1'
+
+      - name: Static analysis
+        run: |
+          php bin/console cache:warmup --env=dev
+          vendor/bin/phpstan analyse --configuration=phpstan.dist.neon --memory-limit=512M --no-progress
+
+      - name: Tests
+        run: vendor/bin/phpunit --configuration phpunit.dist.xml
+
+      - name: Verify the container compiles for production
+        run: php bin/console cache:clear --env=prod --no-debug
+
+  database:
+    name: Migrations on MySQL
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0.36
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: portfolio
+          MYSQL_USER: portfolio
+          MYSQL_PASSWORD: portfolio
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      APP_ENV: prod
+      APP_DEBUG: '0'
+      DATABASE_URL: 'mysql://portfolio:portfolio@127.0.0.1:3306/portfolio?serverVersion=8.0.36&charset=utf8mb4'
+      # Values the prod container needs present; none are real credentials and
+      # none are used by a migration.
+      APP_SECRET: ci-only-not-a-secret
+      CORS_ALLOW_ORIGIN: '^https://ci\.invalid$'
+      ADMIN_PASSWORD_HASH: '$2y$04$Nf0eJ8Zx8K4WqvQ0Qy7m8eQeFJ5cQ9kGq1vQ2pX3rT4uV5wX6yZ7a'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: intl, zip, pdo_mysql
+          coverage: none
+          tools: composer:v2
+
+      - run: composer install --prefer-dist --no-progress --no-interaction
+
+      - name: Migrate up
+        run: php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration
+
+      - name: Schema matches the entity mapping
+        run: php bin/console doctrine:schema:validate
+
+      # The down() paths are part of the rollback story, so they are executed
+      # rather than assumed to work.
+      - name: Migrate all the way down and back up
+        run: |
+          php bin/console doctrine:migrations:migrate first --no-interaction
+          php bin/console doctrine:migrations:migrate latest --no-interaction
+          php bin/console doctrine:schema:validate
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: vue/package-lock.json
+
+      - run: npm ci --no-audit --no-fund
+        working-directory: vue
+
+      - name: npm audit (advisory only)
+        run: npm audit --audit-level=high || true
+        working-directory: vue
+
+      # `npm run build` is `vue-tsc -b && vite build`, so this covers the
+      # typecheck and the production bundle in one step.
+      - name: Typecheck and build
+        run: npm run build
+        working-directory: vue
+
+  images:
+    name: Production images build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build API image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/php/Dockerfile.prod
+          push: false
+          load: true
+          tags: portfolio-api:ci
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+
+      - name: Build web image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: docker/nginx/Dockerfile.prod
+          push: false
+          load: true
+          tags: portfolio-web:ci
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+
+      # nginx resolves upstream hostnames when it loads its config, and
+      # `php-fpm` only exists on the compose network, so the host is stubbed.
+      - name: Validate nginx configuration
+        run: docker run --rm --add-host php-fpm:127.0.0.1 portfolio-web:ci nginx -t
+
+      - name: API image is self-contained and has no dev dependencies
+        run: |
+          docker run --rm portfolio-api:ci php -v
+          docker run --rm portfolio-api:ci php -m | grep -qx pdo_mysql
+          docker run --rm portfolio-api:ci sh -lc '
+            test -f vendor/autoload_runtime.php || { echo "vendor missing"; exit 1; }
+            test ! -d vendor/phpunit         || { echo "dev dependencies leaked into the image"; exit 1; }
+            test ! -d tests                  || { echo "tests leaked into the image"; exit 1; }
+            test ! -e .env.local             || { echo "local secrets leaked into the image"; exit 1; }
+            test -d var/cache/prod           || { echo "prod cache was not warmed"; exit 1; }
+          '
