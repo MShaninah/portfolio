@@ -25,32 +25,17 @@ jobs:
       name: production
       url: ${{ vars.SITE_BASE_URL || 'https://mshaninah.com' }}
     env:
-      # Absolute path to the PHP binary used on the server for migrations.
-      #
-      # It MUST be one of the tuxcare builds: /opt/plesk/php/8.4/bin/php is
-      # 8.4.12 (built Aug 2025) and predates the php2shell fixes
-      # (CVE-2026-109618 / CVE-2026-109619). tuxcare-php-8.5 is 8.5.12 and
-      # tuxcare-php-8.4 is 8.4.27, both patched.
       DEPLOY_PHP: ${{ vars.DEPLOY_PHP || '/opt/plesk/php/tuxcare-php-8.5/bin/php' }}
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_USER: ${{ secrets.SSH_USER }}
       SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
-      # Vhost directory holding releases/, shared/ and the current symlink.
-      #
-      # A variable, NOT a secret: it is a filesystem path, not a credential,
-      # and as a secret GitHub masked it to *** in the logs, which made a
-      # wrong value impossible to diagnose.
       API_DIR: ${{ vars.DEPLOY_DIR }}
-      # Document root served for the SPA; receives the built dist/ directly.
       WEB_DOCROOT: ${{ vars.WEB_DOCROOT }}
       RELEASE: ${{ github.sha }}
 
     steps:
       - uses: actions/checkout@v6
 
-      # ----------------------------------------------------------- build ---
-      # Built on the project's minimum PHP, so the artifact cannot depend on
-      # anything newer than the floor the server might be set to.
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
@@ -63,7 +48,6 @@ jobs:
           composer install --no-dev --prefer-dist --no-progress --no-interaction \
             --optimize-autoloader --classmap-authoritative --no-scripts
 
-      # The server has no Composer, so vendor/ ships inside the release.
       - name: Warm the production cache
         env:
           APP_ENV: prod
@@ -86,18 +70,33 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release/api
-          # Explicit list: tests/, vue/, docker/ and any local env file must
-          # never reach the server. var/ is deliberately NOT created here -- it
-          # is symlinked to shared/var on the server so it survives releases.
-          cp -r bin config migrations public src vendor .env release/api/
+          cp -r bin config migrations public src vendor \
+                .env composer.json composer.lock release/api/
+
+          test -f release/api/composer.json
+          test -f release/api/public/.htaccess
           test ! -e release/api/.env.local
           test ! -d release/api/tests
           test ! -d release/api/var
-          test -f release/api/public/.htaccess
+
           du -sh release/api | sed 's/^/  api release: /'
           du -sh vue/dist    | sed 's/^/  web release: /'
 
-      # ------------------------------------------------------------- ssh ---
+      - name: Verify the assembled release actually boots
+        run: |
+          set -euo pipefail
+          cp -a release/api "$RUNNER_TEMP/verify"
+          cmds=$("$RUNNER_TEMP/verify/bin/console" list --env=prod 2>&1 || true)
+
+          if ! printf '%s' "$cmds" | grep -q 'doctrine:migrations:migrate'; then
+            echo "::error::the assembled release boots without its bundles - \
+          doctrine:migrations:migrate is missing. Check that composer.json and \
+          config/ are present in the release."
+            printf '%s\n' "$cmds" | head -40
+            exit 1
+          fi
+          echo "release boots: $(printf '%s' "$cmds" | grep -c 'doctrine:migrations:') migration commands registered"
+
       - name: Configure SSH
         env:
           SSH_KEY: ${{ secrets.SSH_KEY }}
@@ -115,14 +114,11 @@ jobs:
             echo "  User $SSH_USER"
             echo "  Port $SSH_PORT"
             echo "  IdentityFile ~/.ssh/deploy_key"
-            # Without this the client offers every key it can find, and a
-            # shared host with a low MaxAuthTries drops the connection.
             echo "  IdentitiesOnly yes"
             echo "  BatchMode yes"
           } > ~/.ssh/config
           chmod 600 ~/.ssh/config
 
-      # ------------------------------------------------------- preflight ---
       - name: Preflight the server
         run: |
           set -euo pipefail
@@ -140,8 +136,6 @@ jobs:
           ver="$("$DEPLOY_PHP" -r 'echo PHP_VERSION;')"
           echo "server PHP: $ver"
 
-          # Refuse to deploy onto a PHP that still carries php2shell, or onto
-          # anything below what Symfony 8.1 needs (>=8.4.1).
           "$DEPLOY_PHP" -r '
             $v = PHP_VERSION;
             $ok = (version_compare($v, "8.4.27", ">=") && version_compare($v, "8.5.0", "<"))
@@ -153,8 +147,6 @@ jobs:
             "$DEPLOY_PHP" -m | grep -qx "$ext" || fail "PHP extension missing on the server: $ext"
           done
 
-          # On failure, show what IS there. A hidden dotfile plus a masked path
-          # made this impossible to diagnose from the log the first time.
           if [ ! -f "$API_DIR/shared/.env.local" ]; then
             echo "looked for: $API_DIR/shared/.env.local"
             echo "contents of $API_DIR:"
@@ -170,7 +162,6 @@ jobs:
           REMOTE
           } | ssh target bash -s
 
-      # ---------------------------------------------------------- deploy ---
       - name: Upload the API release
         run: |
           set -euo pipefail
@@ -179,13 +170,6 @@ jobs:
       - name: Upload the frontend
         run: |
           set -euo pipefail
-          # Straight into the document root: static files, no atomic swap
-          # needed, and Plesk manages that directory itself.
-          #
-          # --delete removes everything in the docroot that is not part of the
-          # build. Plesk-managed and ACME paths are excluded so a deploy cannot
-          # break certificate renewal or the panel's own plumbing. ANY OTHER
-          # pre-existing content in that directory will be removed.
           rsync -az --delete \
             --exclude='cgi-bin/' \
             --exclude='.well-known/' \
@@ -203,50 +187,28 @@ jobs:
           set -euo pipefail
           cd "$API_DIR"
 
-          # Record what is live now, so the rollback step has a target.
           if [ -L current ]; then
             basename "$(readlink -f current)" > .previous_release
           fi
           echo "activating $RELEASE (previous: $(cat .previous_release 2>/dev/null || echo none))"
 
-          # Secrets live outside the release so they survive it.
           ln -sfn "$API_DIR/shared/.env.local" "releases/$RELEASE/.env.local"
 
-          # var/cache MUST be release-local. Symfony bakes absolute paths
-          # (kernel.project_dir) into the compiled container, so a cache shared
-          # between releases is wrong for every release but the one that built
-          # it -- and would quietly make a new release execute the previous
-          # one's code. Only the log directory is shared.
           mkdir -p "releases/$RELEASE/var"
           ln -sfn "$API_DIR/shared/var/log" "releases/$RELEASE/var/log"
 
-          # Compile this release's container explicitly. Without this the first
-          # command to run builds it implicitly, and any failure shows up as a
-          # confusing "there are no commands defined in the ... namespace"
-          # instead of the actual error.
           "$DEPLOY_PHP" "releases/$RELEASE/bin/console" cache:warmup --env=prod
 
-          # Migrate BEFORE the symlink flips, so traffic never meets a schema
-          # the running code does not expect.
-          #
-          # --env=prod is explicit and must stay that way. Without it the
-          # command falls back to APP_ENV from .env/.env.local; the committed
-          # .env defaults that to "dev", which boots a different container than
-          # the one warmed above and whose dev-only bundles are absent from a
-          # --no-dev install.
           "$DEPLOY_PHP" "releases/$RELEASE/bin/console" \
             doctrine:migrations:migrate --env=prod --no-interaction --allow-no-migration
 
-          # mv -T over a symlink is atomic: no request sees a half-built state.
           ln -sfn "releases/$RELEASE" current.new && mv -Tf current.new current
           echo "current -> $(readlink current)"
 
-          # Keep the five most recent releases, discard older ones.
           ls -1dt releases/*/ | tail -n +6 | xargs -r rm -r --
           REMOTE
           } | ssh target bash -s
 
-      # ---------------------------------------------------------- verify ---
       - name: Wait for the site to answer
         env:
           SITE_BASE: ${{ vars.SITE_BASE_URL || 'https://mshaninah.com' }}
@@ -284,9 +246,6 @@ jobs:
           probe 'unknown project'   "$API_BASE/api/projects/nope"   404
           probe 'admin is guarded'  "$API_BASE/api/admin/portfolio" 401
 
-          # Load-bearing: Symfony resolves %env() lazily, so a missing
-          # ADMIN_PASSWORD_HASH breaks neither the build nor the boot. A 401
-          # here proves the secret is present and verification actually ran.
           probe 'login rejects bad password' "$API_BASE/api/admin/login" 401 \
                 POST '{"password":"ci-smoke-deliberately-wrong"}'
 
@@ -295,9 +254,6 @@ jobs:
         run: |
           set -euo pipefail
           echo "::warning::deploy or smoke test failed - attempting rollback"
-          # Captured so the final message can state what actually happened.
-          # Always claiming "rolled back" is misleading on a first deploy,
-          # where there is no previous release to go back to.
           out=$(
           {
             printf 'API_DIR=%q\n' "$API_DIR"
@@ -317,9 +273,6 @@ jobs:
           )
           echo "$out"
 
-          # Migrations are NOT reversed either way. Rolling the schema back is
-          # a deliberate, manual decision:
-          #   <php> releases/<prev>/bin/console doctrine:migrations:migrate prev
           if printf '%s' "$out" | grep -q 'rolled back to'; then
             echo "::error::rolled back to the previous release; the schema was left migrated"
           else
