@@ -1,33 +1,39 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Service;
 
 use App\Dto\ProjectCreateDto;
 use App\Dto\ProjectUpdateDto;
 use App\Entity\Project;
+use App\Repository\ProjectRepository;
 use Doctrine\ORM\EntityManagerInterface;
-use Symfony\Component\PropertyAccess\PropertyAccessorInterface;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
 final readonly class AdminProjectService
 {
     public function __construct(
         private EntityManagerInterface $em,
-        private PropertyAccessorInterface $propertyAccessor,
-    ) {}
+        private ProjectRepository $projects,
+    ) {
+    }
 
     public function create(ProjectCreateDto $dto): Project
     {
-        $repo = $this->em->getRepository(Project::class);
-
-        if ($repo->findOneBy(['slug' => $dto->id])) {
+        if (null !== $this->projects->findOneBy(['slug' => $dto->id])) {
             throw new ConflictHttpException('Project with this ID already exists.');
         }
 
-        $project = new Project();
-        $project->setSlug($dto->id);
-
-        $this->mapDtoToEntity($dto, $project);
+        $project = new Project()
+            ->setSlug($dto->id)
+            ->setTitle($dto->title)
+            ->setTagline($dto->tagline)
+            ->setSummary($dto->summary)
+            ->setHighlights($dto->stack)
+            ->setLinks($dto->links)
+            ->setYear($dto->year)
+            ->setCategory($dto->category);
 
         $this->em->persist($project);
         $this->em->flush();
@@ -37,7 +43,33 @@ final readonly class AdminProjectService
 
     public function update(Project $project, ProjectUpdateDto $dto): Project
     {
-        $this->mapDtoToEntity($dto, $project);
+        if (null !== $dto->title) {
+            $project->setTitle($dto->title);
+        }
+
+        if (null !== $dto->tagline) {
+            $project->setTagline($dto->tagline);
+        }
+
+        if (null !== $dto->summary) {
+            $project->setSummary($dto->summary);
+        }
+
+        if (null !== $dto->stack) {
+            $project->setHighlights($dto->stack);
+        }
+
+        if (null !== $dto->links) {
+            $project->setLinks($dto->links);
+        }
+
+        if (null !== $dto->year) {
+            $project->setYear($dto->year);
+        }
+
+        if (null !== $dto->category) {
+            $project->setCategory($dto->category);
+        }
 
         $this->em->flush();
 
@@ -48,26 +80,5 @@ final readonly class AdminProjectService
     {
         $this->em->remove($project);
         $this->em->flush();
-    }
-    private function mapDtoToEntity(object $dto, Project $project): void
-    {
-        $mapping = [
-            'title'    => 'title',
-            'tagline'  => 'tagline',
-            'summary'  => 'summary',
-            'stack'    => 'highlights',
-            'year'     => 'year',
-            'category' => 'category',
-            'links'    => 'links',
-        ];
-
-        foreach ($mapping as $dtoField => $entityField) {
-            if ($this->propertyAccessor->isReadable($dto, $dtoField)) {
-                $value = $this->propertyAccessor->getValue($dto, $dtoField);
-                if ($value !== null) {
-                    $this->propertyAccessor->setValue($project, $entityField, $value);
-                }
-            }
-        }
     }
 }

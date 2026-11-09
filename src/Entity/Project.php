@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Entity;
 
 use App\Repository\ProjectRepository;
@@ -31,10 +33,12 @@ class Project
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $summary = null;
 
+    /** @var list<string>|null */
     #[Groups(['project:read'])]
     #[ORM\Column(nullable: true)]
     private ?array $highlights = null;
 
+    /** @var list<array{label: string, href: string}>|null */
     #[Groups(['project:read'])]
     #[ORM\Column(nullable: true)]
     private ?array $links = null;
@@ -50,13 +54,6 @@ class Project
     public function getId(): ?int
     {
         return $this->id;
-    }
-
-    public function setId(string $id): static
-    {
-        $this->id = $id;
-
-        return $this;
     }
 
     public function getSlug(): ?string
@@ -107,11 +104,17 @@ class Project
         return $this;
     }
 
+    /**
+     * @return list<string>|null
+     */
     public function getHighlights(): ?array
     {
         return $this->highlights;
     }
 
+    /**
+     * @param list<string>|null $highlights
+     */
     public function setHighlights(?array $highlights): static
     {
         $this->highlights = $highlights;
@@ -119,11 +122,17 @@ class Project
         return $this;
     }
 
+    /**
+     * @return list<array{label: string, href: string}>|null
+     */
     public function getLinks(): ?array
     {
         return $this->links;
     }
 
+    /**
+     * @param list<array{label: string, href: string}>|null $links
+     */
     public function setLinks(?array $links): static
     {
         $this->links = $links;
