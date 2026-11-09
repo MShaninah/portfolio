@@ -164,7 +164,7 @@ jobs:
             fail "$API_DIR/shared/.env.local is missing - create it before the first deploy"
           fi
 
-          mkdir -p "$API_DIR/releases" "$API_DIR/shared/var"
+          mkdir -p "$API_DIR/releases" "$API_DIR/shared/var/log"
           [ -d "$WEB_DOCROOT" ] || fail "WEB_DOCROOT $WEB_DOCROOT does not exist"
           echo "preflight OK"
           REMOTE
@@ -209,10 +209,22 @@ jobs:
           fi
           echo "activating $RELEASE (previous: $(cat .previous_release 2>/dev/null || echo none))"
 
-          # Secrets and the writable var/ live outside the release so they
-          # survive it.
+          # Secrets live outside the release so they survive it.
           ln -sfn "$API_DIR/shared/.env.local" "releases/$RELEASE/.env.local"
-          ln -sfn "$API_DIR/shared/var"        "releases/$RELEASE/var"
+
+          # var/cache MUST be release-local. Symfony bakes absolute paths
+          # (kernel.project_dir) into the compiled container, so a cache shared
+          # between releases is wrong for every release but the one that built
+          # it -- and would quietly make a new release execute the previous
+          # one's code. Only the log directory is shared.
+          mkdir -p "releases/$RELEASE/var"
+          ln -sfn "$API_DIR/shared/var/log" "releases/$RELEASE/var/log"
+
+          # Compile this release's container explicitly. Without this the first
+          # command to run builds it implicitly, and any failure shows up as a
+          # confusing "there are no commands defined in the ... namespace"
+          # instead of the actual error.
+          "$DEPLOY_PHP" "releases/$RELEASE/bin/console" cache:warmup --env=prod
 
           # Migrate BEFORE the symlink flips, so traffic never meets a schema
           # the running code does not expect.
