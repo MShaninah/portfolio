@@ -1,0 +1,7 @@
+# Dev override: additionally accept any localhost port for the Vite dev server.
+#
+# This list is MERGED into the base one-element array, giving two independent
+# regexes. Each element must be a single regex (see the base config).
+nelmio_cors:
+    defaults:
+        allow_origin: ['^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$']

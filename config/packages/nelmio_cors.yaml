@@ -1,9 +1,22 @@
 nelmio_cors:
     defaults:
         origin_regex: true
+        # NOTE on the shape of this value.
+        #
+        # NelmioCorsExtension inspects allow_origin with in_array() while the
+        # container is being compiled, so it must be a real YAML array at that
+        # point -- an '%env(json:...)%' scalar is still an unresolved string
+        # then and makes the bundle throw a TypeError.
+        #
+        # So: a one-element array, and because origin_regex is true the single
+        # env value may list several origins using regex alternation (|).
+        # CORS_ALLOW_ORIGIN must therefore be ONE regex, never a JSON array --
+        # a JSON array placed here became a literal string that matched nothing.
         allow_origin: ['%env(CORS_ALLOW_ORIGIN)%']
         allow_methods: ['GET', 'OPTIONS', 'POST', 'PUT', 'PATCH', 'DELETE']
         allow_headers: ['Content-Type', 'Authorization']
+        # Deliberately absent: allow_credentials. The API authenticates with a
+        # bearer token, never a cookie.
         expose_headers: ['Link']
         max_age: 3600
     paths:
