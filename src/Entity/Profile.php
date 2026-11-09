@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Entity;
 
 use App\Repository\ProfileRepository;
@@ -22,11 +24,32 @@ class Profile
     #[Groups(['portfolio:read'])]
     private ?string $phone = null;
 
-    public function getId(): ?int { return $this->id; }
+    public function getId(): ?int
+    {
+        return $this->id;
+    }
 
-    public function getEmail(): string { return $this->email; }
-    public function setEmail(string $email): self { $this->email = $email; return $this; }
+    public function getEmail(): string
+    {
+        return $this->email;
+    }
 
-    public function getPhone(): ?string { return $this->phone; }
-    public function setPhone(?string $phone): self { $this->phone = $phone; return $this; }
+    public function setEmail(string $email): self
+    {
+        $this->email = $email;
+
+        return $this;
+    }
+
+    public function getPhone(): ?string
+    {
+        return $this->phone;
+    }
+
+    public function setPhone(?string $phone): self
+    {
+        $this->phone = $phone;
+
+        return $this;
+    }
 }
