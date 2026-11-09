@@ -3,7 +3,7 @@ export type ContactPayload = {
   email: string
   subject: string
   message: string
-  // Honeypot field – leave empty; backend discards if filled
+  // Honeypot field
   company?: string
 }
 
@@ -17,7 +17,6 @@ export async function sendContact(payload: ContactPayload): Promise<ContactRespo
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
-    console.log(res)
   // Normalize common failure cases
   if (!res.ok) {
     let msg = 'Failed to send message'
@@ -27,7 +26,6 @@ export async function sendContact(payload: ContactPayload): Promise<ContactRespo
     } catch {}
 
     // Specific friendly messages
-      console.log(res)
     if (res.status === 429) msg = 'Too many requests. Please try again later.'
     if (res.status >= 500) msg = 'Service unavailable. Please try again later.'
 
