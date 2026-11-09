@@ -2,16 +2,14 @@ doctrine:
     dbal:
         url: '%env(resolve:DATABASE_URL)%'
 
-        # IMPORTANT: You MUST configure your server version,
-        # either here or in the DATABASE_URL env var (see .env file)
-        #server_version: '16'
+        # The server version is carried in DATABASE_URL (?serverVersion=8.0.36)
+        # rather than pinned here, so the test environment can point at SQLite
+        # without contradicting a hardcoded MySQL version.
 
         profiling_collect_backtrace: '%kernel.debug%'
     orm:
         validate_xml_mapping: true
         naming_strategy: doctrine.orm.naming_strategy.underscore_number_aware
-        identity_generation_preferences:
-            Doctrine\DBAL\Platforms\PostgreSQLPlatform: identity
         auto_mapping: true
         mappings:
             App:
@@ -20,8 +18,6 @@ doctrine:
                 dir: '%kernel.project_dir%/src/Entity'
                 prefix: 'App\Entity'
                 alias: App
-        controller_resolver:
-            auto_mapping: false
 
 when@test:
     doctrine:
