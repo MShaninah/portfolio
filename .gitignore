@@ -1,4 +1,3 @@
-
 ###> symfony/framework-bundle ###
 /.env.local
 /.env.local.php
@@ -13,9 +12,36 @@
 /phpunit.xml
 /.phpunit.cache/
 ###< phpunit/phpunit ###
-
-###> symfony/asset-mapper ###
-/public/assets/
-/assets/vendor/
-###< symfony/asset-mapper ###
 /.idea
+
+###> friendsofphp/php-cs-fixer ###
+/.php-cs-fixer.php
+/.php-cs-fixer.cache
+###< friendsofphp/php-cs-fixer ###
+
+###> app ###
+# Filled production environment files live only on the server.
+# The committed templates are .env.prod.example / .env.prod.db.example.
+/.env.prod
+/.env.prod.db
+
+# Database dumps and seed data must never be committed: they contain real
+# contact details. These were previously untracked but NOT ignored, so a
+# "git add ." would have published them.
+/db_dump.sql
+/db_dump.sql.gz
+/*.sql
+/*.sql.gz
+/config/portfolio.seed.json
+
+# Editor backup files (a stray config/packages/nelmio_cors.yaml~ was found
+# sitting next to the real config).
+*~
+*.orig
+*.bak
+
+###> phpstan/phpstan ###
+/phpstan.neon
+/.phpstan.cache/
+###< phpstan/phpstan ###
+###< app ###
