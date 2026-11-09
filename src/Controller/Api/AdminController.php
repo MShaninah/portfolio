@@ -38,6 +38,7 @@ final class AdminController extends AbstractController
         private readonly AdminSkillsService $skills,
     ) {
     }
+
     #[Route('/login', name: 'api_admin_login', methods: ['POST'])]
     public function login(
         #[MapRequestPayload]

@@ -12,6 +12,15 @@ use Symfony\Component\Security\Core\Exception\UserNotFoundException;
 use Symfony\Component\Security\Core\User\UserInterface;
 use Symfony\Component\Security\Core\User\UserProviderInterface;
 
+/**
+ * Provides the single administrator from configuration.
+ *
+ * The @implements tag is load-bearing, not decoration: Symfony 8.1 declares
+ * UserProviderInterface as `@template-covariant TUser of UserInterface`, so
+ * PHPStan fails the build without it.
+ *
+ * @implements UserProviderInterface<AdminUser>
+ */
 final readonly class AdminUserProvider implements UserProviderInterface
 {
     public function __construct(
