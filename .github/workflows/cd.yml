@@ -228,8 +228,14 @@ jobs:
 
           # Migrate BEFORE the symlink flips, so traffic never meets a schema
           # the running code does not expect.
+          #
+          # --env=prod is explicit and must stay that way. Without it the
+          # command falls back to APP_ENV from .env/.env.local; the committed
+          # .env defaults that to "dev", which boots a different container than
+          # the one warmed above and whose dev-only bundles are absent from a
+          # --no-dev install.
           "$DEPLOY_PHP" "releases/$RELEASE/bin/console" \
-            doctrine:migrations:migrate --no-interaction --allow-no-migration
+            doctrine:migrations:migrate --env=prod --no-interaction --allow-no-migration
 
           # mv -T over a symlink is atomic: no request sees a half-built state.
           ln -sfn "releases/$RELEASE" current.new && mv -Tf current.new current
@@ -288,7 +294,11 @@ jobs:
         if: failure()
         run: |
           set -euo pipefail
-          echo "::warning::deploy or smoke test failed - rolling back"
+          echo "::warning::deploy or smoke test failed - attempting rollback"
+          # Captured so the final message can state what actually happened.
+          # Always claiming "rolled back" is misleading on a first deploy,
+          # where there is no previous release to go back to.
+          out=$(
           {
             printf 'API_DIR=%q\n' "$API_DIR"
             cat <<'REMOTE'
@@ -304,7 +314,15 @@ jobs:
           echo "rolled back to $prev"
           REMOTE
           } | ssh target bash -s
-          # Migrations are NOT reversed. Rolling the schema back is deliberate:
+          )
+          echo "$out"
+
+          # Migrations are NOT reversed either way. Rolling the schema back is
+          # a deliberate, manual decision:
           #   <php> releases/<prev>/bin/console doctrine:migrations:migrate prev
-          echo "::error::rolled back; the schema was left migrated"
+          if printf '%s' "$out" | grep -q 'rolled back to'; then
+            echo "::error::rolled back to the previous release; the schema was left migrated"
+          else
+            echo "::error::deploy failed and nothing was rolled back - see the failing step above for the real error"
+          fi
           exit 1
