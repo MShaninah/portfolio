@@ -8,180 +8,231 @@ on:
 permissions:
   contents: read
 
-# Deploys are never cancelled mid-flight, and only one runs at a time.
 concurrency:
   group: cd-production
   cancel-in-progress: false
 
 jobs:
-  # The full CI gate must pass before anything is published or deployed.
   ci:
     name: CI
     uses: ./.github/workflows/ci.yml
 
-  publish:
-    name: Publish images to GHCR
+  deploy:
+    name: Build and deploy
     needs: ci
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-      id-token: write
-      attestations: write
-    outputs:
-      tag: ${{ steps.meta.outputs.tag }}
-      api_image: ${{ steps.meta.outputs.api_image }}
-      web_image: ${{ steps.meta.outputs.web_image }}
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Compute image names and tag
-        id: meta
-        shell: bash
-        run: |
-          set -euo pipefail
-          # GHCR rejects uppercase paths and the owner here is "MShaninah".
-          owner="${GITHUB_REPOSITORY_OWNER,,}"
-          tag="${GITHUB_SHA::12}"
-          {
-            echo "tag=$tag"
-            echo "api_image=ghcr.io/$owner/portfolio-api"
-            echo "web_image=ghcr.io/$owner/portfolio-web"
-          } >> "$GITHUB_OUTPUT"
-
-      - uses: docker/setup-buildx-action@v4
-
-      - uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push API image
-        id: push_api
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: docker/php/Dockerfile.prod
-          push: true
-          tags: |
-            ${{ steps.meta.outputs.api_image }}:${{ steps.meta.outputs.tag }}
-            ${{ steps.meta.outputs.api_image }}:latest
-          cache-from: type=gha,scope=api
-          cache-to: type=gha,scope=api,mode=max
-
-      - name: Build and push web image
-        id: push_web
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: docker/nginx/Dockerfile.prod
-          push: true
-          tags: |
-            ${{ steps.meta.outputs.web_image }}:${{ steps.meta.outputs.tag }}
-            ${{ steps.meta.outputs.web_image }}:latest
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,scope=web,mode=max
-
-      # Records where and how each image was built, so the server can be shown
-      # to be running something this repository actually produced.
-      - name: Attest API image provenance
-        uses: actions/attest@v4
-        with:
-          subject-name: ${{ steps.meta.outputs.api_image }}
-          subject-digest: ${{ steps.push_api.outputs.digest }}
-          push-to-registry: true
-
-      - name: Attest web image provenance
-        uses: actions/attest@v4
-        with:
-          subject-name: ${{ steps.meta.outputs.web_image }}
-          subject-digest: ${{ steps.push_web.outputs.digest }}
-          push-to-registry: true
-
-  deploy:
-    name: Deploy to production
-    needs: publish
-    runs-on: ubuntu-latest
-    # Add required reviewers to this environment in repository settings to gate
-    # releases behind a manual approval.
     environment:
       name: production
       url: ${{ vars.SITE_BASE_URL || 'https://mshaninah.com' }}
+    env:
+      # Absolute path to the PHP binary used on the server for migrations.
+      #
+      # It MUST be one of the tuxcare builds: /opt/plesk/php/8.4/bin/php is
+      # 8.4.12 (built Aug 2025) and predates the php2shell fixes
+      # (CVE-2026-109618 / CVE-2026-109619). tuxcare-php-8.5 is 8.5.12 and
+      # tuxcare-php-8.4 is 8.4.27, both patched.
+      DEPLOY_PHP: ${{ vars.DEPLOY_PHP || '/opt/plesk/php/tuxcare-php-8.5/bin/php' }}
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+      # Vhost directory holding releases/, shared/ and the current symlink.
+      API_DIR: ${{ secrets.DEPLOY_DIR }}
+      # Document root served for the SPA; receives the built dist/ directly.
+      WEB_DOCROOT: ${{ vars.WEB_DOCROOT }}
+      RELEASE: ${{ github.sha }}
+
     steps:
+      - uses: actions/checkout@v6
+
+      # ----------------------------------------------------------- build ---
+      # Built on the project's minimum PHP, so the artifact cannot depend on
+      # anything newer than the floor the server might be set to.
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: intl, zip, pdo_mysql
+          coverage: none
+          tools: composer:v2
+
+      - name: Install production dependencies
+        run: |
+          composer install --no-dev --prefer-dist --no-progress --no-interaction \
+            --optimize-autoloader --classmap-authoritative --no-scripts
+
+      # The server has no Composer, so vendor/ ships inside the release.
+      - name: Warm the production cache
+        env:
+          APP_ENV: prod
+          APP_DEBUG: '0'
+        run: php bin/console cache:warmup --env=prod
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: vue/package-lock.json
+
+      - name: Build the frontend
+        working-directory: vue
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Assemble the release
+        run: |
+          set -euo pipefail
+          mkdir -p release/api
+          # Explicit list: tests/, vue/, docker/ and any local env file must
+          # never reach the server. var/ is deliberately NOT created here -- it
+          # is symlinked to shared/var on the server so it survives releases.
+          cp -r bin config migrations public src vendor .env release/api/
+          test ! -e release/api/.env.local
+          test ! -d release/api/tests
+          test ! -d release/api/var
+          test -f release/api/public/.htaccess
+          du -sh release/api | sed 's/^/  api release: /'
+          du -sh vue/dist    | sed 's/^/  web release: /'
+
+      # ------------------------------------------------------------- ssh ---
       - name: Configure SSH
         env:
           SSH_KEY: ${{ secrets.SSH_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
-        shell: bash
         run: |
           set -euo pipefail
           install -m 700 -d ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          # Pinned from a secret rather than ssh-keyscan: accepting whatever key
-          # the host happens to present would defeat the point.
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
+          {
+            echo "Host target"
+            echo "  HostName $SSH_HOST"
+            echo "  User $SSH_USER"
+            echo "  Port $SSH_PORT"
+            echo "  IdentityFile ~/.ssh/deploy_key"
+            # Without this the client offers every key it can find, and a
+            # shared host with a low MaxAuthTries drops the connection.
+            echo "  IdentitiesOnly yes"
+            echo "  BatchMode yes"
+          } > ~/.ssh/config
+          chmod 600 ~/.ssh/config
 
-      - name: Pull, migrate and restart
-        env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
-          DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
-          IMAGE_TAG: ${{ needs.publish.outputs.tag }}
-        shell: bash
+      # ------------------------------------------------------- preflight ---
+      - name: Preflight the server
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" -o BatchMode=yes \
-            "$SSH_USER@$SSH_HOST" \
-            "DEPLOY_DIR='$DEPLOY_DIR' IMAGE_TAG='$IMAGE_TAG' bash -s" <<'REMOTE'
+          {
+            printf 'DEPLOY_PHP=%q API_DIR=%q WEB_DOCROOT=%q\n' \
+              "$DEPLOY_PHP" "$API_DIR" "$WEB_DOCROOT"
+            cat <<'REMOTE'
           set -euo pipefail
-          cd "$DEPLOY_DIR"
-          export IMAGE_TAG
-          compose() { docker compose -f compose.prod.yaml "$@"; }
+          fail() { echo "::error::$1"; exit 1; }
 
-          # Remember what is running now, so the rollback step has a target.
-          running_id="$(compose ps -q php-fpm 2>/dev/null || true)"
-          if [ -n "$running_id" ]; then
-            docker inspect --format '{{.Config.Image}}' "$running_id" \
-              | sed 's/.*://' > .previous_image_tag
-          fi
-          echo "deploying $IMAGE_TAG (previous: $(cat .previous_image_tag 2>/dev/null || echo none))"
+          [ -n "$API_DIR" ]     || fail "DEPLOY_DIR secret is empty"
+          [ -n "$WEB_DOCROOT" ] || fail "WEB_DOCROOT variable is empty"
+          [ -x "$DEPLOY_PHP" ]  || fail "no PHP binary at $DEPLOY_PHP"
 
-          compose pull
-          compose up -d db
+          ver="$("$DEPLOY_PHP" -r 'echo PHP_VERSION;')"
+          echo "server PHP: $ver"
 
-          # Migrate with the new image in a throwaway container, before the
-          # serving containers are replaced.
-          compose run --rm php-fpm \
-            php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration
+          # Refuse to deploy onto a PHP that still carries php2shell, or onto
+          # anything below what Symfony 8.1 needs (>=8.4.1).
+          "$DEPLOY_PHP" -r '
+            $v = PHP_VERSION;
+            $ok = (version_compare($v, "8.4.27", ">=") && version_compare($v, "8.5.0", "<"))
+               || version_compare($v, "8.5.12", ">=");
+            exit($ok ? 0 : 1);
+          ' || fail "server PHP $ver is unpatched or too old (need 8.4.27+ or 8.5.12+)"
 
-          compose up -d --remove-orphans
-          docker image prune -f --filter 'until=168h'
+          for ext in pdo_mysql intl zip; do
+            "$DEPLOY_PHP" -m | grep -qx "$ext" || fail "PHP extension missing on the server: $ext"
+          done
+
+          [ -f "$API_DIR/shared/.env.local" ] \
+            || fail "$API_DIR/shared/.env.local is missing - create it before the first deploy"
+
+          mkdir -p "$API_DIR/releases" "$API_DIR/shared/var"
+          [ -d "$WEB_DOCROOT" ] || fail "WEB_DOCROOT $WEB_DOCROOT does not exist"
+          echo "preflight OK"
           REMOTE
+          } | ssh target bash -s
 
-      - name: Wait for the stack to answer
+      # ---------------------------------------------------------- deploy ---
+      - name: Upload the API release
+        run: |
+          set -euo pipefail
+          rsync -az --delete -e ssh release/api/ "target:$API_DIR/releases/$RELEASE/"
+
+      - name: Upload the frontend
+        run: |
+          set -euo pipefail
+          # Straight into the document root: static files, no atomic swap
+          # needed, and Plesk manages that directory itself.
+          #
+          # --delete removes everything in the docroot that is not part of the
+          # build. Plesk-managed and ACME paths are excluded so a deploy cannot
+          # break certificate renewal or the panel's own plumbing. ANY OTHER
+          # pre-existing content in that directory will be removed.
+          rsync -az --delete \
+            --exclude='cgi-bin/' \
+            --exclude='.well-known/' \
+            --exclude='error_docs/' \
+            --exclude='.htaccess' \
+            -e ssh vue/dist/ "target:$WEB_DOCROOT/"
+
+      - name: Migrate and activate
+        run: |
+          set -euo pipefail
+          {
+            printf 'DEPLOY_PHP=%q API_DIR=%q RELEASE=%q\n' \
+              "$DEPLOY_PHP" "$API_DIR" "$RELEASE"
+            cat <<'REMOTE'
+          set -euo pipefail
+          cd "$API_DIR"
+
+          # Record what is live now, so the rollback step has a target.
+          if [ -L current ]; then
+            basename "$(readlink -f current)" > .previous_release
+          fi
+          echo "activating $RELEASE (previous: $(cat .previous_release 2>/dev/null || echo none))"
+
+          # Secrets and the writable var/ live outside the release so they
+          # survive it.
+          ln -sfn "$API_DIR/shared/.env.local" "releases/$RELEASE/.env.local"
+          ln -sfn "$API_DIR/shared/var"        "releases/$RELEASE/var"
+
+          # Migrate BEFORE the symlink flips, so traffic never meets a schema
+          # the running code does not expect.
+          "$DEPLOY_PHP" "releases/$RELEASE/bin/console" \
+            doctrine:migrations:migrate --no-interaction --allow-no-migration
+
+          # mv -T over a symlink is atomic: no request sees a half-built state.
+          ln -sfn "releases/$RELEASE" current.new && mv -Tf current.new current
+          echo "current -> $(readlink current)"
+
+          # Keep the five most recent releases, discard older ones.
+          ls -1dt releases/*/ | tail -n +6 | xargs -r rm -r --
+          REMOTE
+          } | ssh target bash -s
+
+      # ---------------------------------------------------------- verify ---
+      - name: Wait for the site to answer
         env:
           SITE_BASE: ${{ vars.SITE_BASE_URL || 'https://mshaninah.com' }}
-        shell: bash
         run: |
           set -euo pipefail
           for i in $(seq 1 30); do
-            if curl -fsS --max-time 10 "$SITE_BASE/healthz" >/dev/null 2>&1; then
-              echo "healthy after ${i}s"; exit 0
-            fi
+            curl -fsS --max-time 10 -o /dev/null "$SITE_BASE/" && { echo "up after ${i}s"; exit 0; }
             sleep 2
           done
-          echo "::error::stack did not become healthy within 60s"
+          echo "::error::site did not answer within 60s"
           exit 1
 
       - name: Smoke test
         env:
           API_BASE: ${{ vars.API_BASE_URL || 'https://api.mshaninah.com' }}
           SITE_BASE: ${{ vars.SITE_BASE_URL || 'https://mshaninah.com' }}
-        shell: bash
         run: |
           set -euo pipefail
           probe() {
@@ -193,10 +244,7 @@ jobs:
             else
               code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 -X "$method" "$url")
             fi
-            if [ "$code" != "$want" ]; then
-              echo "::error::$name: expected HTTP $want, got $code ($url)"
-              return 1
-            fi
+            [ "$code" = "$want" ] || { echo "::error::$name: expected $want, got $code ($url)"; return 1; }
             echo "ok  $name -> $code"
           }
 
@@ -206,40 +254,33 @@ jobs:
           probe 'unknown project'   "$API_BASE/api/projects/nope"   404
           probe 'admin is guarded'  "$API_BASE/api/admin/portfolio" 401
 
-          # This one is load-bearing. Symfony resolves %env()% lazily, so a
-          # missing ADMIN_PASSWORD_HASH does NOT fail the build or the boot --
-          # it surfaces as a 500 the first time a credential is verified. A 401
+          # Load-bearing: Symfony resolves %env() lazily, so a missing
+          # ADMIN_PASSWORD_HASH breaks neither the build nor the boot. A 401
           # here proves the secret is present and verification actually ran.
           probe 'login rejects bad password' "$API_BASE/api/admin/login" 401 \
                 POST '{"password":"ci-smoke-deliberately-wrong"}'
 
-      - name: Roll back to the previous image
+      - name: Roll back
         if: failure()
-        env:
-          SSH_HOST: ${{ secrets.SSH_HOST }}
-          SSH_USER: ${{ secrets.SSH_USER }}
-          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
-          DEPLOY_DIR: ${{ secrets.DEPLOY_DIR }}
-        shell: bash
         run: |
           set -euo pipefail
           echo "::warning::deploy or smoke test failed - rolling back"
-          ssh -i ~/.ssh/deploy_key -p "$SSH_PORT" -o BatchMode=yes \
-            "$SSH_USER@$SSH_HOST" "DEPLOY_DIR='$DEPLOY_DIR' bash -s" <<'REMOTE'
+          {
+            printf 'API_DIR=%q\n' "$API_DIR"
+            cat <<'REMOTE'
           set -euo pipefail
-          cd "$DEPLOY_DIR"
-          if [ ! -s .previous_image_tag ]; then
-            echo "no previous tag recorded; leaving the stack as it is"
+          cd "$API_DIR"
+          if [ ! -s .previous_release ]; then
+            echo "no previous release recorded; leaving current as it is"
             exit 0
           fi
-          IMAGE_TAG="$(cat .previous_image_tag)"
-          export IMAGE_TAG
-          echo "rolling back to $IMAGE_TAG"
-          docker compose -f compose.prod.yaml up -d --remove-orphans
+          prev="$(cat .previous_release)"
+          [ -d "releases/$prev" ] || { echo "previous release $prev is gone"; exit 0; }
+          ln -sfn "releases/$prev" current.new && mv -Tf current.new current
+          echo "rolled back to $prev"
           REMOTE
-          # NOTE: database migrations are NOT reversed. Rolling the schema back
-          # is a deliberate, manual decision:
-          #   docker compose -f compose.prod.yaml run --rm php-fpm \
-          #     php bin/console doctrine:migrations:migrate prev
+          } | ssh target bash -s
+          # Migrations are NOT reversed. Rolling the schema back is deliberate:
+          #   <php> releases/<prev>/bin/console doctrine:migrations:migrate prev
           echo "::error::rolled back; the schema was left migrated"
           exit 1

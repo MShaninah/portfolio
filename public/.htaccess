@@ -1,0 +1,51 @@
+# Apache front controller for the Symfony API.
+#
+# Required on Plesk/CloudLinux shared hosting, where the server config is not
+# ours to edit (docker/nginx/* applies only to the container stack).
+
+<IfModule mod_negotiation.c>
+    Options -MultiViews
+</IfModule>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Strip a leading subdirectory when the docroot is not the vhost root.
+    RewriteCond %{REQUEST_URI}::$0 ^(/.+)/(.*)::\2$
+    RewriteRule .* - [E=BASE:%1]
+
+    # Preserve the Authorization header: some CGI/FastCGI setups drop it, which
+    # would make every bearer token invisible and the whole admin API 401.
+    RewriteCond %{HTTP:Authorization} .+
+    RewriteRule ^ - [E=HTTP_AUTHORIZATION:%0]
+
+    # Redirect to the canonical URI without the front controller.
+    RewriteCond %{ENV:REDIRECT_STATUS} =""
+    RewriteRule ^index\.php(?:/(.*)|$) %{ENV:BASE}/$1 [R=301,L]
+
+    # Serve existing files directly.
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^ - [L]
+
+    # Everything else goes to the front controller.
+    RewriteRule ^ %{ENV:BASE}/index.php [L]
+</IfModule>
+
+<IfModule !mod_rewrite.c>
+    <IfModule mod_alias.c>
+        RedirectMatch 307 ^/$ /index.php/
+    </IfModule>
+</IfModule>
+
+# Hardening: the container stack sets these in nginx; Apache needs them here.
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set Referrer-Policy "no-referrer"
+</IfModule>
+
+# Never serve dotfiles. public/ should contain none, but a stray .env copied
+# into the docroot would otherwise be world-readable.
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
