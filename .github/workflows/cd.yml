@@ -36,7 +36,11 @@ jobs:
       SSH_USER: ${{ secrets.SSH_USER }}
       SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
       # Vhost directory holding releases/, shared/ and the current symlink.
-      API_DIR: ${{ secrets.DEPLOY_DIR }}
+      #
+      # A variable, NOT a secret: it is a filesystem path, not a credential,
+      # and as a secret GitHub masked it to *** in the logs, which made a
+      # wrong value impossible to diagnose.
+      API_DIR: ${{ vars.DEPLOY_DIR }}
       # Document root served for the SPA; receives the built dist/ directly.
       WEB_DOCROOT: ${{ vars.WEB_DOCROOT }}
       RELEASE: ${{ github.sha }}
@@ -129,7 +133,7 @@ jobs:
           set -euo pipefail
           fail() { echo "::error::$1"; exit 1; }
 
-          [ -n "$API_DIR" ]     || fail "DEPLOY_DIR secret is empty"
+          [ -n "$API_DIR" ]     || fail "DEPLOY_DIR variable is empty"
           [ -n "$WEB_DOCROOT" ] || fail "WEB_DOCROOT variable is empty"
           [ -x "$DEPLOY_PHP" ]  || fail "no PHP binary at $DEPLOY_PHP"
 
@@ -149,8 +153,16 @@ jobs:
             "$DEPLOY_PHP" -m | grep -qx "$ext" || fail "PHP extension missing on the server: $ext"
           done
 
-          [ -f "$API_DIR/shared/.env.local" ] \
-            || fail "$API_DIR/shared/.env.local is missing - create it before the first deploy"
+          # On failure, show what IS there. A hidden dotfile plus a masked path
+          # made this impossible to diagnose from the log the first time.
+          if [ ! -f "$API_DIR/shared/.env.local" ]; then
+            echo "looked for: $API_DIR/shared/.env.local"
+            echo "contents of $API_DIR:"
+            ls -la "$API_DIR"        2>&1 | sed 's/^/    /' || true
+            echo "contents of $API_DIR/shared:"
+            ls -la "$API_DIR/shared" 2>&1 | sed 's/^/    /' || true
+            fail "$API_DIR/shared/.env.local is missing - create it before the first deploy"
+          fi
 
           mkdir -p "$API_DIR/releases" "$API_DIR/shared/var"
           [ -d "$WEB_DOCROOT" ] || fail "WEB_DOCROOT $WEB_DOCROOT does not exist"
