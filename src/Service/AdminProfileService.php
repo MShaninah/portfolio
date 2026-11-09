@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Service;
 
 use App\Dto\ProfileUpdateDto;
@@ -11,8 +13,9 @@ final readonly class AdminProfileService
 {
     public function __construct(
         private EntityManagerInterface $em,
-        private ProfileRepository      $profiles,
-    ) {}
+        private ProfileRepository $profiles,
+    ) {
+    }
 
     public function update(ProfileUpdateDto $dto): Profile
     {

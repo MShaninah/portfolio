@@ -2,14 +2,10 @@
 framework:
     secret: '%env(APP_SECRET)%'
 
-    # Note that the session will be started ONLY if you read or write from it.
-    session: true
-
-    #esi: true
-    #fragments: true
+    # This is a stateless, token-authenticated JSON API: it never reads or
+    # writes a session, and the firewall is declared stateless to match.
+    session: false
 
 when@test:
     framework:
         test: true
-        session:
-            storage_factory_id: session.storage.factory.mock_file

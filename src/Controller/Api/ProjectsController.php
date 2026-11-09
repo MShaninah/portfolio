@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Controller\Api;
 
 use App\Entity\Project;
@@ -17,7 +19,7 @@ final class ProjectsController extends AbstractController
     {
         return $this->json(
             $repo->findBy([], ['id' => 'DESC']),
-            context: ['groups' => 'project:read']
+            context: ['groups' => 'project:read'],
         );
     }
 

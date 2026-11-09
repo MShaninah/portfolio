@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Service;
 
 use App\Dto\SkillsUpdateDto;
@@ -11,8 +13,15 @@ final readonly class AdminSkillsService
 {
     public function __construct(
         private EntityManagerInterface $em,
-        private SkillRepository        $skills,
-    ) {}
+        private SkillRepository $skills,
+    ) {
+    }
+
+    /**
+     * Replaces the stored skill set, adding and removing only what changed.
+     *
+     * @return list<string>
+     */
     public function replaceAll(SkillsUpdateDto $dto): array
     {
         $newNames = array_values(array_unique($dto->skills));
