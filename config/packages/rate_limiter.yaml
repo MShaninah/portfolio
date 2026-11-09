@@ -1,6 +1,14 @@
 framework:
     rate_limiter:
+        # Public contact form.
         contact_form:
-            policy: 'fixed_window'
+            policy: 'sliding_window'
             limit: 5
             interval: '1 minute'
+
+        # Admin login. The entire admin credential is one shared password, so
+        # unlimited guessing must not be possible.
+        admin_login:
+            policy: 'sliding_window'
+            limit: 5
+            interval: '15 minutes'

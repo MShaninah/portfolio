@@ -4,13 +4,30 @@
 # Files in the packages/ subdirectory configure your dependencies.
 # See also https://symfony.com/doc/current/service_container/import.html
 
-# Put parameters here that don't need to change on each machine where the app is deployed
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
-    admin_password_default: 'admin'
-    admin_password: '%env(string:default:admin_password_default:ADMIN_PASSWORD)%'
-    contact_to: '%env(string:default::CONTACT_TO)%'
-    contact_from: '%env(string:default::CONTACT_FROM)%'
+    # Argon2id/bcrypt hash of the admin password -- NEVER the plaintext.
+    # Generate with: bin/console security:hash-password
+    #
+    # Deliberately has NO default value. A fallback here would silently grant
+    # everyone that fallback credential, which is exactly the bug this replaces.
+    #
+    # Caveat on how loudly this fails: Symfony keeps %env()% as a runtime
+    # placeholder, so a missing value does NOT break cache warmup or container
+    # boot -- it surfaces when AdminUserProvider is first instantiated, i.e. on
+    # the first admin request. AdminUserProvider therefore validates the value
+    # itself, and the deploy pipeline smoke-tests a wrong-password login
+    # (expecting 401, not 500) to catch an unset secret at release time.
+    app.admin_password_hash: '%env(ADMIN_PASSWORD_HASH)%'
+
+    # Lifetime of an issued admin bearer token, in seconds (default 1 hour).
+    app.admin_token_ttl_default: 3600
+    app.admin_token_ttl: '%env(int:default:app.admin_token_ttl_default:ADMIN_TOKEN_TTL)%'
+
+    # Empty is tolerated here: an unconfigured mailbox makes the contact form
+    # answer 503 and log, rather than taking the whole application down.
+    app.contact_to: '%env(string:default::CONTACT_TO)%'
+    app.contact_from: '%env(string:default::CONTACT_FROM)%'
 
 services:
     # default configuration for services in *this* file
@@ -22,10 +39,10 @@ services:
     # this creates a service per class whose id is the fully-qualified class name
     App\:
         resource: '../src/'
-
-    App\Service\AdminAuthService:
-        arguments:
-            $adminPassword: '%admin_password%'
-
-    # add more service definitions when explicit configuration is needed
-    # please note that last definitions always *replace* previous ones
+        exclude:
+            - '../src/Dto/'
+            - '../src/Entity/'
+            - '../src/Enum/'
+            - '../src/Kernel.php'
+            # A value object built by AdminUserProvider, not a service.
+            - '../src/Security/AdminUser.php'

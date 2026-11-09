@@ -4,24 +4,37 @@ declare(strict_types=1);
 
 namespace App\Service;
 
+use App\Security\AdminTokenManager;
+use App\Security\AdminUser;
+use App\Security\AdminUserProvider;
+use SensitiveParameter;
+use Symfony\Component\PasswordHasher\Hasher\PasswordHasherFactoryInterface;
+
 final readonly class AdminAuthService
 {
     public function __construct(
-        private string $adminPassword
-    ) {}
-
-    public function verifyPassword(string $password): bool
-    {
-        return hash_equals($this->adminPassword, $password);
+        private AdminUserProvider $users,
+        private PasswordHasherFactoryInterface $hasherFactory,
+        private AdminTokenManager $tokens,
+    ) {
     }
 
-    public function token(): string
+    public function verifyPassword(#[SensitiveParameter] string $password): bool
     {
-        return hash('sha256', $this->adminPassword);
+        if ('' === $password) {
+            return false;
+        }
+
+        $user = $this->users->loadUserByIdentifier(AdminUser::IDENTIFIER);
+
+        return $this->hasherFactory->getPasswordHasher($user)->verify($user->getPassword(), $password);
     }
 
-    public function verifyToken(string $token): bool
+    /**
+     * @return array{token: string, expires_in: int, expires_at: string}
+     */
+    public function issueToken(): array
     {
-        return hash_equals($this->token(), trim($token));
+        return $this->tokens->issue();
     }
 }

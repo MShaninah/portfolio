@@ -4,42 +4,41 @@ declare(strict_types=1);
 
 namespace App\Security;
 
-use App\Service\AdminAuthService;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
 use Symfony\Component\Security\Core\Exception\AuthenticationException;
-use Symfony\Component\Security\Core\User\InMemoryUser;
+use Symfony\Component\Security\Core\Exception\CustomUserMessageAuthenticationException;
 use Symfony\Component\Security\Http\Authenticator\AbstractAuthenticator;
 use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
 use Symfony\Component\Security\Http\Authenticator\Passport\SelfValidatingPassport;
 
 final class AdminTokenAuthenticator extends AbstractAuthenticator
 {
-    public function __construct(private readonly AdminAuthService $auth) {}
+    public function __construct(
+        private readonly AdminTokenManager $tokens,
+    ) {
+    }
 
-    public function supports(Request $request): ?bool
+    public function supports(Request $request): bool
     {
-        if (!str_starts_with($request->getPathInfo(), '/api/admin')) {
-            return false;
-        }
-        if ($request->getPathInfo() === '/api/admin/login') {
-            return false;
-        }
-        return true;
+        return str_starts_with($request->getPathInfo(), '/api/admin')
+            && '/api/admin/login' !== $request->getPathInfo();
     }
 
     public function authenticate(Request $request): SelfValidatingPassport
     {
-        $auth = (string)$request->headers->get('Authorization', '');
-        $token = preg_replace('/^Bearer\s+/i', '', $auth) ?? '';
-        if (!$this->auth->verifyToken(trim($token))) {
-            throw new AuthenticationException('Invalid token');
+        $header = $request->headers->get('Authorization') ?? '';
+        if (1 !== preg_match('/^Bearer\s+(?<token>\S+)$/i', trim($header), $matches)) {
+            throw new CustomUserMessageAuthenticationException('Missing bearer token.');
         }
 
-        $userProvider = fn(string $identifier) => new InMemoryUser($identifier, null, ['ROLE_ADMIN']);
-        return new SelfValidatingPassport(new UserBadge('admin', $userProvider));
+        if (!$this->tokens->verify($matches['token'])) {
+            throw new CustomUserMessageAuthenticationException('Invalid or expired token.');
+        }
+
+        return new SelfValidatingPassport(new UserBadge(AdminUser::IDENTIFIER));
     }
 
     public function onAuthenticationSuccess(Request $request, TokenInterface $token, string $firewallName): ?Response
@@ -47,7 +46,7 @@ final class AdminTokenAuthenticator extends AbstractAuthenticator
         return null;
     }
 
-    public function onAuthenticationFailure(Request $request, AuthenticationException $exception): ?Response
+    public function onAuthenticationFailure(Request $request, AuthenticationException $exception): JsonResponse
     {
         return new JsonResponse(['message' => 'Unauthorized'], Response::HTTP_UNAUTHORIZED);
     }
