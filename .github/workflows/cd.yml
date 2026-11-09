@@ -147,6 +147,11 @@ jobs:
             "$DEPLOY_PHP" -m | grep -qx "$ext" || fail "PHP extension missing on the server: $ext"
           done
 
+          if [ -f "$API_DIR/shared/.env.local" ] \
+             && grep -qE 'CHANGE_ME|@db:|DB_USER|DB_NAME' "$API_DIR/shared/.env.local"; then
+            fail "shared/.env.local still holds placeholders from .env.prod.example - fill in the real database credentials (host is 127.0.0.1 on this server, not 'db')"
+          fi
+
           if [ ! -f "$API_DIR/shared/.env.local" ]; then
             echo "looked for: $API_DIR/shared/.env.local"
             echo "contents of $API_DIR:"
