@@ -474,7 +474,7 @@ const aboutStats = [
   { n: "20+", t: "Projects" },
 ];
 
-const hobbies = ["Mate", "Gaming", "Open source"];
+const hobbies = ["Matetee", "Gaming", "Open source"];
 
 const aboutCards = [
   { title: "Background", text: "Enterprise experience in Germany (adesso)." },
