@@ -1,9 +1,11 @@
 <?php
+
 declare(strict_types=1);
 
 namespace App\Service;
 
 use App\Dto\ContactRequest;
+use RuntimeException;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Symfony\Component\Mailer\MailerInterface;
@@ -12,10 +14,13 @@ use Symfony\Component\Mime\Email;
 final readonly class ContactService
 {
     public function __construct(
-        private MailerInterface                      $mailer,
-        #[Autowire('%contact_to%')] private string   $to,
-        #[Autowire('%contact_from%')] private string $from,
-    ) {}
+        private MailerInterface $mailer,
+        #[Autowire('%app.contact_to%')]
+        private string $to,
+        #[Autowire('%app.contact_from%')]
+        private string $from,
+    ) {
+    }
 
     /**
      * @throws TransportExceptionInterface
@@ -23,7 +28,7 @@ final readonly class ContactService
     public function sendContactEmail(ContactRequest $dto): void
     {
         if (!$this->to || !$this->from) {
-            throw new \RuntimeException('Contact email parameters are not configured.');
+            throw new RuntimeException('Contact email parameters are not configured.');
         }
 
         $email = new Email()

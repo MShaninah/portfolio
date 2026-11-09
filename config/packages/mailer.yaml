@@ -1,3 +1,9 @@
 framework:
     mailer:
         dsn: '%env(MAILER_DSN)%'
+        # Bypass Messenger entirely: Mailer::send() talks to the transport in
+        # the same request. This is what makes a delivery failure raise
+        # TransportExceptionInterface where ContactController can catch it and
+        # answer 503. Routed through the bus, the send was fire-and-forget and
+        # the endpoint reported success regardless.
+        message_bus: false

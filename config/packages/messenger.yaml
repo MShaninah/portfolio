@@ -18,9 +18,10 @@ framework:
             messenger.bus.default: []
 
         routing:
-            Symfony\Component\Mailer\Messenger\SendEmailMessage: async
-            Symfony\Component\Notifier\Message\ChatMessage: async
-            Symfony\Component\Notifier\Message\SmsMessage: async
-
+            # Contact email is sent synchronously and on purpose: it is rate
+            # limited to 5/minute, and sending inline is what lets the endpoint
+            # report a real delivery failure instead of silently queuing a
+            # message that no worker was running to consume.
+            #
             # Route your messages to the transports
             # 'App\Message\YourMessage': async
