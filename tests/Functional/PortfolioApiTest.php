@@ -90,7 +90,13 @@ final class PortfolioApiTest extends WebTestCase
         $body = $this->decode();
 
         self::assertSame('hi@example.test', $body['profile']['email']);
-        self::assertSame(['Doctrine', 'Symfony'], $body['skills']);
+        self::assertSame(
+            [
+                ['name' => 'Doctrine', 'category' => 'backend', 'level' => 'advanced'],
+                ['name' => 'Symfony', 'category' => 'backend', 'level' => 'advanced'],
+            ],
+            $body['skills'],
+        );
         self::assertCount(1, $body['projects']);
         self::assertSame('alpha', $body['projects'][0]['slug']);
     }
@@ -215,11 +221,22 @@ final class PortfolioApiTest extends WebTestCase
     public function testSkillsAreReplacedAsASet(): void
     {
         $this->client->request('PUT', '/api/admin/skills', server: $this->authHeaders(), content: json_encode([
-            'skills' => ['Symfony', 'PHP', 'Symfony'],
+            'skills' => [
+                ['name' => 'Symfony', 'category' => 'backend', 'level' => 'advanced'],
+                ['name' => 'PHP', 'category' => 'backend', 'level' => 'intermediate'],
+                ['name' => 'Symfony', 'category' => 'backend', 'level' => 'advanced'],
+            ],
         ], \JSON_THROW_ON_ERROR));
 
         self::assertResponseIsSuccessful();
-        self::assertSame(['Symfony', 'PHP'], $this->decode()['skills'], 'duplicates collapse');
+        self::assertSame(
+            [
+                ['name' => 'Symfony', 'category' => 'backend', 'level' => 'advanced'],
+                ['name' => 'PHP', 'category' => 'backend', 'level' => 'intermediate'],
+            ],
+            $this->decode()['skills'],
+            'duplicates collapse, and the category/level survive',
+        );
 
         $this->em->clear();
         $names = array_map(
@@ -233,7 +250,10 @@ final class PortfolioApiTest extends WebTestCase
     public function testBlankSkillsAreRejected(): void
     {
         $this->client->request('PUT', '/api/admin/skills', server: $this->authHeaders(), content: json_encode([
-            'skills' => ['Symfony', ''],
+            'skills' => [
+                ['name' => 'Symfony', 'category' => 'backend', 'level' => 'advanced'],
+                ['name' => '', 'category' => 'backend', 'level' => 'advanced'],
+            ],
         ], \JSON_THROW_ON_ERROR));
 
         self::assertResponseStatusCodeSame(Response::HTTP_UNPROCESSABLE_ENTITY);
