@@ -167,6 +167,39 @@ jobs:
           REMOTE
           } | ssh target bash -s
 
+      - name: Check TLS certificates
+        env:
+          API_BASE: ${{ vars.API_BASE_URL || 'https://api.mshaninah.com' }}
+          SITE_BASE: ${{ vars.SITE_BASE_URL || 'https://mshaninah.com' }}
+        run: |
+          set -euo pipefail
+          bad=0
+          for base in "$SITE_BASE" "$API_BASE"; do
+            host=${base#*://}
+            host=${host%%/*}
+
+            end=$(echo | openssl s_client -servername "$host" -connect "$host:443" 2>/dev/null \
+                  | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2 || true)
+
+            if [ -z "$end" ]; then
+              echo "::error::$host: no TLS certificate could be read"
+              bad=1
+              continue
+            fi
+
+            left=$(( ( $(date -d "$end" +%s) - $(date +%s) ) / 86400 ))
+
+            if [ "$left" -lt 0 ]; then
+              echo "::error::$host: certificate EXPIRED $(( -left )) days ago, on $end. Bind this domain to a current certificate in Plesk - a wildcard issued for the parent domain already covers its subdomains, so no separate certificate is needed."
+              bad=1
+            elif [ "$left" -lt 14 ]; then
+              echo "::warning::$host: certificate expires in $left days, on $end"
+            else
+              echo "ok  $host: certificate valid for $left more days"
+            fi
+          done
+          [ "$bad" -eq 0 ]
+
       - name: Verify the API document root
         env:
           API_BASE: ${{ vars.API_BASE_URL || 'https://api.mshaninah.com' }}
@@ -194,12 +227,20 @@ jobs:
             exit 0
           fi
 
-          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$API_BASE/$probe" || echo 000)
+          set +e
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$API_BASE/$probe" 2>"$RUNNER_TEMP/probe.err")
+          rc=$?
+          set -e
 
           {
             printf 'API_DIR=%q probe=%q\n' "$API_DIR" "$probe"
             echo 'rm -f "$API_DIR/current/public/$probe"'
           } | ssh target bash -s
+
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::$API_BASE could not be reached at all (curl exit $rc): $(tr '\n' ' ' < "$RUNNER_TEMP/probe.err"). This is NOT a document-root problem - no HTTP answer came back. Check the domain's TLS certificate and that its vhost is running."
+            exit 1
+          fi
 
           if [ "$code" != 200 ]; then
             echo "::error::$API_BASE does not serve $API_DIR/current/public - a file placed there answered $code, so the vhost document root points somewhere else. In Plesk, open Websites & Domains, the API domain, Hosting Settings, and set the document root to current/public. Plesk states this relative to the subscription root on some versions, so the value may need to be api.mshaninah.com/current/public - compare it with the main domain's, which is a folder directly under the subscription root. Stopping now, before the database is migrated."
