@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests;
 
+use App\Service\ContactService;
 use LogicException;
 use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
 
@@ -15,18 +16,39 @@ use Symfony\Component\RateLimiter\RateLimiterFactoryInterface;
  */
 trait ResetsRateLimiters
 {
-    private function resetRateLimiters(string $ip): void
+    /**
+     * @param string ...$recipients addresses whose acknowledgement throttle
+     *                              should also be cleared. Needed by any test
+     *                              that expects an acknowledgement, because
+     *                              that limiter is keyed by address rather
+     *                              than by IP and one per hour is all it
+     *                              allows.
+     */
+    private function resetRateLimiters(string $ip, string ...$recipients): void
     {
-        $container = static::getContainer();
-
         foreach (['limiter.admin_login', 'limiter.contact_form'] as $id) {
-            $factory = $container->get($id);
-
-            if (!$factory instanceof RateLimiterFactoryInterface) {
-                throw new LogicException(\sprintf('Service "%s" is not a rate limiter factory.', $id));
-            }
-
-            $factory->create($ip)->reset();
+            $this->limiterFactory($id)->create($ip)->reset();
         }
+
+        $this->limiterFactory('limiter.contact_ack_global')
+            ->create(ContactService::GLOBAL_LIMITER_KEY)
+            ->reset();
+
+        foreach ($recipients as $recipient) {
+            $this->limiterFactory('limiter.contact_ack_recipient')
+                ->create(ContactService::recipientLimiterKey($recipient))
+                ->reset();
+        }
+    }
+
+    private function limiterFactory(string $id): RateLimiterFactoryInterface
+    {
+        $factory = static::getContainer()->get($id);
+
+        if (!$factory instanceof RateLimiterFactoryInterface) {
+            throw new LogicException(\sprintf('Service "%s" is not a rate limiter factory.', $id));
+        }
+
+        return $factory;
     }
 }

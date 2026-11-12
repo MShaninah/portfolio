@@ -12,3 +12,23 @@ framework:
             policy: 'sliding_window'
             limit: 5
             interval: '15 minutes'
+
+        # Acknowledgement mailed back to whoever filled in the form. That
+        # address comes from an anonymous caller, so these two limiters -- not
+        # the per-IP one above -- are what stop the form being used to put
+        # text in a stranger's inbox.
+        #
+        # One per address per hour. A flood aimed at a single victim gets
+        # exactly one message through, from however many IPs it is sent.
+        contact_ack_recipient:
+            policy: 'sliding_window'
+            limit: 1
+            interval: '1 hour'
+
+        # Ceiling across all recipients: the only control that still bites
+        # when submissions are spread over many addresses and many IPs. Sized
+        # for a portfolio site, where real traffic is a handful a week.
+        contact_ack_global:
+            policy: 'sliding_window'
+            limit: 20
+            interval: '1 hour'
