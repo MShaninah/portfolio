@@ -16,4 +16,15 @@
 
     RewriteCond %{REQUEST_URI} ^/api(/|$)
     RewriteRule ^ /_api/index.php [QSA,L]
+
+    # Anything that exists on disk is served as it is: index.html, the hashed
+    # assets, vite.svg.
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Everything else is a route the app handles in the browser, /login among
+    # them. Without this the server looks for a file called "login", does not
+    # find one, and answers 404 before the app ever loads.
+    RewriteRule ^ /index.html [L]
 </IfModule>
