@@ -24,10 +24,25 @@ parameters:
     app.admin_token_ttl_default: 3600
     app.admin_token_ttl: '%env(int:default:app.admin_token_ttl_default:ADMIN_TOKEN_TTL)%'
 
+    # Where the uploaded CV PDF is kept. It must live OUTSIDE the document
+    # root and outside the release directory, or every deploy would discard it.
+    # On the server var/storage is symlinked to shared/var/storage.
+    app.cv_dir_default: '%kernel.project_dir%/var/storage'
+    app.cv_dir: '%env(default:app.cv_dir_default:CV_STORAGE_DIR)%'
+
     # Empty is tolerated here: an unconfigured mailbox makes the contact form
     # answer 503 and log, rather than taking the whole application down.
     app.contact_to: '%env(string:default::CONTACT_TO)%'
     app.contact_from: '%env(string:default::CONTACT_FROM)%'
+
+    # Whether to check that the address an acknowledgement would go to has a
+    # mail route before sending to it. Keeps bounces -- and the sending
+    # reputation damage they cause -- down to real delivery failures.
+    #
+    # Off in tests and offline development: example.test resolves to nothing
+    # by design, and a DNS lookup per submission is not wanted in a test run.
+    app.contact_verify_recipient_domain_default: true
+    app.contact_verify_recipient_domain: '%env(bool:default:app.contact_verify_recipient_domain_default:CONTACT_VERIFY_MX)%'
 
 services:
     # default configuration for services in *this* file
