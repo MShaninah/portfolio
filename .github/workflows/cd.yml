@@ -161,11 +161,52 @@ jobs:
             fail "$API_DIR/shared/.env.local is missing - create it before the first deploy"
           fi
 
-          mkdir -p "$API_DIR/releases" "$API_DIR/shared/var/log"
+          mkdir -p "$API_DIR/releases" "$API_DIR/shared/var/log" "$API_DIR/shared/var/storage"
           [ -d "$WEB_DOCROOT" ] || fail "WEB_DOCROOT $WEB_DOCROOT does not exist"
           echo "preflight OK"
           REMOTE
           } | ssh target bash -s
+
+      - name: Verify the API document root
+        env:
+          API_BASE: ${{ vars.API_BASE_URL || 'https://api.mshaninah.com' }}
+        run: |
+          set -euo pipefail
+          probe="deploy-probe-$RANDOM$RANDOM.txt"
+
+          state=$(
+          {
+            printf 'API_DIR=%q probe=%q\n' "$API_DIR" "$probe"
+            cat <<'REMOTE'
+          set -euo pipefail
+          if [ ! -e "$API_DIR/current/public" ]; then
+            echo first-deploy
+            exit 0
+          fi
+          : > "$API_DIR/current/public/$probe"
+          echo placed
+          REMOTE
+          } | ssh target bash -s
+          )
+
+          if [ "$state" = first-deploy ]; then
+            echo "no release is active yet; the smoke test checks the document root instead"
+            exit 0
+          fi
+
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$API_BASE/$probe" || echo 000)
+
+          {
+            printf 'API_DIR=%q probe=%q\n' "$API_DIR" "$probe"
+            echo 'rm -f "$API_DIR/current/public/$probe"'
+          } | ssh target bash -s
+
+          if [ "$code" != 200 ]; then
+            echo "::error::$API_BASE does not serve $API_DIR/current/public - a file placed there answered $code, so the vhost document root points somewhere else. In Plesk, open Websites & Domains, the API domain, Hosting Settings, and set the document root to current/public. Stopping now, before the database is migrated."
+            exit 1
+          fi
+
+          echo "document root confirmed: $API_BASE serves the active release's public/"
 
       - name: Upload the API release
         run: |
@@ -201,6 +242,7 @@ jobs:
 
           mkdir -p "releases/$RELEASE/var"
           ln -sfn "$API_DIR/shared/var/log" "releases/$RELEASE/var/log"
+          ln -sfn "$API_DIR/shared/var/storage" "releases/$RELEASE/var/storage"
 
           "$DEPLOY_PHP" "releases/$RELEASE/bin/console" cache:warmup --env=prod
 
