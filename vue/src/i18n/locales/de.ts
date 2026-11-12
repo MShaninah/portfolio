@@ -37,49 +37,17 @@ export default {
   skills: {
     title: "Fähigkeiten & Technologien",
     subtitle: "Ein umfassender Überblick über meine technische Expertise",
-    groups: [
-      {
-        title: "Frontend-Entwicklung",
-        desc: "Moderne, responsive Benutzeroberflächen erstellen",
-        items: [
-          { name: "Vue.js", level: "Fortgeschritten" },
-          { name: "JavaScript", level: "Fortgeschritten" },
-          { name: "Twig", level: "Fortgeschritten" },
-          { name: "Responsive UI", level: "Fortgeschritten" },
-        ],
-      },
-      {
-        title: "Backend-Entwicklung",
-        desc: "Robuste Serveranwendungen und APIs entwickeln",
-        items: [
-          { name: "PHP", level: "Fortgeschritten" },
-          { name: "Symfony", level: "Fortgeschritten" },
-          { name: "Drupal", level: "Fortgeschritten" },
-          { name: "SQL", level: "Fortgeschritten" },
-          { name: "REST-APIs", level: "Fortgeschritten" },
-        ],
-      },
-      {
-        title: "Daten / KI (Nebenprojekte)",
-        desc: "Pragmatisches ML-Engineering und Daten-Workflows",
-        items: [
-          { name: "Python", level: "Fortgeschritten" },
-          { name: "ASR", level: "Fortgeschritten" },
-          { name: "faster-whisper", level: "Fortgeschritten" },
-          { name: "Schlagwortextraktion", level: "Mittel" },
-        ],
-      },
-      {
-        title: "DevOps & Qualität",
-        desc: "Entwicklungs- und Deployment-Workflows optimieren",
-        items: [
-          { name: "Git", level: "Fortgeschritten" },
-          { name: "Docker", level: "Mittel" },
-          { name: "Testing", level: "Fortgeschritten" },
-          { name: "Linux", level: "Fortgeschritten" },
-        ],
-      },
-    ],
+    categories: {
+      frontend: { title: "Frontend-Entwicklung", desc: "Moderne, responsive Benutzeroberflächen" },
+      backend:  { title: "Backend-Entwicklung",  desc: "Robuste Server-Anwendungen und APIs" },
+      data_ai:  { title: "Daten / KI",           desc: "Pragmatisches ML-Engineering und Daten-Workflows" },
+      devops:   { title: "DevOps & Qualität",    desc: "Entwicklungs- und Deployment-Workflows" },
+    },
+    levels: {
+      beginner: "Grundkenntnisse",
+      intermediate: "Fortgeschritten",
+      advanced: "Expertenniveau",
+    },
     strip: [
       { n: "30+", t: "Technologien" },
       { n: "4+", t: "Jahre Erfahrung" },

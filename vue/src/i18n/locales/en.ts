@@ -38,49 +38,17 @@ export default {
   skills: {
     title: "Skills & Technologies",
     subtitle: "A comprehensive overview of my technical expertise",
-    groups: [
-      {
-        title: "Frontend Development",
-        desc: "Creating modern, responsive user interfaces",
-        items: [
-          { name: "Vue.js", level: "Advanced" },
-          { name: "JavaScript", level: "Advanced" },
-          { name: "Twig", level: "Advanced" },
-          { name: "Responsive UI", level: "Advanced" },
-        ],
-      },
-      {
-        title: "Backend Development",
-        desc: "Building robust server-side applications and APIs",
-        items: [
-          { name: "PHP", level: "Advanced" },
-          { name: "Symfony", level: "Advanced" },
-          { name: "Drupal", level: "Advanced" },
-          { name: "SQL", level: "Advanced" },
-          { name: "REST APIs", level: "Advanced" },
-        ],
-      },
-      {
-        title: "Data / AI (side projects)",
-        desc: "Pragmatic ML engineering and data workflows",
-        items: [
-          { name: "Python", level: "Advanced" },
-          { name: "ASR", level: "Advanced" },
-          { name: "faster-whisper", level: "Advanced" },
-          { name: "Keyword Extraction", level: "Intermediate" },
-        ],
-      },
-      {
-        title: "DevOps & Quality",
-        desc: "Streamlining development and deployment workflows",
-        items: [
-          { name: "Git", level: "Advanced" },
-          { name: "Docker", level: "Intermediate" },
-          { name: "Testing", level: "Advanced" },
-          { name: "Linux", level: "Advanced" },
-        ],
-      },
-    ],
+    categories: {
+      frontend: { title: "Frontend Development", desc: "Creating modern, responsive user interfaces" },
+      backend:  { title: "Backend Development",  desc: "Building robust server-side applications and APIs" },
+      data_ai:  { title: "Data / AI",            desc: "Pragmatic ML engineering and data workflows" },
+      devops:   { title: "DevOps & Quality",     desc: "Streamlining development and deployment workflows" },
+    },
+    levels: {
+      beginner: "Beginner",
+      intermediate: "Intermediate",
+      advanced: "Advanced",
+    },
     strip: [
       { n: "30+", t: "Technologies" },
       { n: "4+", t: "Years Experience" },

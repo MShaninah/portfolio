@@ -1,7 +1,8 @@
 export type AdminPortfolio = {
   projects: any[]
   profile: { email: string; phone?: string }
-  skills?: string[]
+  skills?: AdminSkill[]
+  cv?: { available: boolean; filename: string | null; updated_at: string | null }
 }
 
 export type LoginResult = {
@@ -57,10 +58,36 @@ function onUnauthorized(): Error {
   return new Error('Session expired. Please sign in again.')
 }
 
+/**
+ * Pulls the server's own explanation out of an error response.
+ *
+ * A 422 from MapRequestPayload carries the failing field and reason; throwing a
+ * generic "Failed to update project" threw that away and left no way to tell
+ * what was actually wrong.
+ */
+async function errorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const body: any = await res.clone().json()
+
+    const violations = body?.violations
+    if (Array.isArray(violations) && violations.length > 0) {
+      return violations
+        .slice(0, 3)
+        .map((v: any) => (v?.propertyPath ? `${v.propertyPath}: ${v.message}` : v?.message))
+        .filter(Boolean)
+        .join(' · ')
+    }
+
+    return body?.detail || body?.message || fallback
+  } catch {
+    return fallback
+  }
+}
+
 async function guard(res: Response, fallback: string): Promise<Response> {
   if (res.status === 401) throw onUnauthorized()
   if (res.status === 429) throw new Error('Too many requests. Please try again later.')
-  if (!res.ok) throw new Error(fallback)
+  if (!res.ok) throw new Error(await errorMessage(res, fallback))
   return res
 }
 
@@ -86,6 +113,23 @@ export async function adminLogin(password: string): Promise<string> {
   return data.token
 }
 
+export type CvInfo = { available: boolean; filename: string | null; updated_at: string | null }
+
+export async function adminUploadCv(file: File): Promise<{ filename: string; updated_at: string | null }> {
+  const body = new FormData()
+  body.append('file', file)
+
+  const res = await fetch(apiUrl('/api/admin/cv'), {
+    method: 'POST',
+    // Content-Type is deliberately NOT set: the browser must add it itself so
+    // the multipart boundary is included.
+    headers: { Accept: 'application/json', ...authHeader() },
+    body,
+  })
+  await guard(res, 'Failed to upload the CV')
+  return res.json()
+}
+
 export async function adminFetch(): Promise<AdminPortfolio> {
   const res = await fetch(apiUrl('/api/admin/portfolio'), { headers: { Accept: 'application/json', ...authHeader() } })
   await guard(res, `API ${res.status}`)
@@ -103,7 +147,9 @@ export async function adminUpdateProfile(payload: { email: string; phone?: strin
   return data.profile
 }
 
-export async function adminSetSkills(skills: string[]): Promise<string[]> {
+export type AdminSkill = { name: string; category: string; level: string }
+
+export async function adminSetSkills(skills: AdminSkill[]): Promise<AdminSkill[]> {
   const res = await fetch(apiUrl('/api/admin/skills'), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeader() },
@@ -111,7 +157,7 @@ export async function adminSetSkills(skills: string[]): Promise<string[]> {
   })
   await guard(res, 'Failed to update skills')
   const data = await res.json()
-  return data.skills as string[]
+  return data.skills as AdminSkill[]
 }
 
 export async function adminAddProject(project: any): Promise<any> {

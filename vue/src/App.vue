@@ -23,7 +23,7 @@
             </h1>
 
             <p class="mt-3 max-w-3xl text-sm sm:text-base leading-relaxed text-white/70">
-              SPECIALIZING IN CLEAN APIs, CLEAN AUTH FLOWS, AND SCALABLE BACKEND ARCHITECTURE.
+              {{ $t('hero.subtitle') }}
             </p>
 
             <div class="mt-6 flex flex-wrap items-center gap-3">
@@ -31,7 +31,7 @@
                   class="btn-primary"
                   @click="scrollTo('projects')"
               >
-                View Projects
+                {{ $t('hero.ctaProjects') }}
                 <ArrowUpRight class="ml-2 h-4 w-4" />
               </button>
 
@@ -39,7 +39,7 @@
                   class="btn-outline"
                   @click="scrollTo('contact')"
               >
-                Contact Me
+                {{ $t('hero.ctaContact') }}
                 <Mail class="ml-2 h-4 w-4" />
               </button>
             </div>
@@ -66,13 +66,13 @@
               @keydown.space.prevent="scrollTo('about')"
             >
               <span class="h-px w-10 bg-white/15" />
-              <span>Scroll down</span>
+              <span>{{ $t('hero.scrollDown') }}</span>
             </div>
           </div>
         </section>
 
         <section id="about" v-reveal class="mx-auto max-w-6xl px-4 py-12">
-          <SectionKicker title="About Me" subtitle="Get to know the person behind the code" />
+          <SectionKicker :title="$t('about.title')" :subtitle="$t('about.subtitle')" />
 
           <div class="mt-8 grid gap-6 lg:grid-cols-3">
             <GlassCard class="overflow-hidden">
@@ -102,7 +102,7 @@
                       <MapPin class="h-4 w-4" /> Leipzig, Germany
                     </div>
                     <div class="flex items-center gap-2">
-                      <span class="h-2 w-2 rounded-full bg-white/40" /> Focused on backend roles
+                      <span class="h-2 w-2 rounded-full bg-white/40" /> {{ $t('about.focus') }}
                     </div>
                   </div>
 
@@ -113,8 +113,13 @@
                     </div>
                   </div>
 
-                  <button class="btn-outline w-full" @click="">
-                    <Download class="mr-2 h-4 w-4" /> Download Resume
+                  <button
+                    class="btn-outline w-full disabled:cursor-not-allowed disabled:opacity-40"
+                    :disabled="!cvAvailable"
+                    :title="cvAvailable ? 'Download the CV as PDF' : 'No CV has been uploaded yet'"
+                    @click="downloadCv"
+                  >
+                    <Download class="mr-2 h-4 w-4" /> {{ $t('about.downloadResume') }}
                   </button>
                 </div>
               </div>
@@ -146,8 +151,8 @@
 
         <section id="skills" v-reveal class="mx-auto max-w-6xl px-4 py-12">
           <SectionKicker
-              title="Skills & Technologies"
-              subtitle="A comprehensive overview of my technical expertise"
+              :title="$t('skills.title')"
+              :subtitle="$t('skills.subtitle')"
           />
 
           <div class="mt-8 grid gap-4 md:grid-cols-2">
@@ -194,7 +199,7 @@
           </div>
         </section>
         <section id="projects" v-reveal class="mx-auto max-w-6xl px-4 py-12">
-          <SectionKicker title="Projects" subtitle="Selected work" />
+          <SectionKicker :title="$t('projects.title')" :subtitle="$t('projects.subtitle')" />
 
           <div class="mt-6 flex flex-wrap gap-2">
             <button
@@ -218,7 +223,7 @@
         </section>
 
         <section id="contact" v-reveal class="mx-auto max-w-6xl px-4 py-14">
-          <SectionKicker title="Get In Touch" subtitle="Contact" />
+          <SectionKicker :title="$t('contact.title')" :subtitle="$t('contact.subtitle')" />
 
           <GlassCard class="mt-8">
             <div class="p-6 sm:p-8">
@@ -293,7 +298,8 @@
 <script setup lang="ts">
 import {computed, markRaw, onMounted, ref, watch} from "vue";
 import {i18n} from "./i18n";
-import {getPortfolio} from "./api/portfolio"
+import {useI18n} from "vue-i18n";
+import {getPortfolio, cvDownloadUrl} from "./api/portfolio"
 import { getToken } from "./api/admin"
 import { sendContact } from "./api/contact"
 
@@ -361,7 +367,7 @@ function toggleTheme() {
 const socials = [
   { label: "GitHub", href: "https://github.com/MShaninah", icon: markRaw(Github) },
   { label: "LinkedIn", href: "https://www.linkedin.com/in/mohamad-shaninah-5231761ab", icon: markRaw(Linkedin) },
-  { label: "Email", href: "mailto:shaninah.mohammad@gmail.com", icon: markRaw(Mail) },
+  { label: "Email", href: "mailto:mohamad@mshaninah.com", icon: markRaw(Mail) },
 ] as const
 
 type Project = {
@@ -376,7 +382,7 @@ type Project = {
   category: "Backend" | "AI" | "Enterprise" | "IoT";
 };
 
-const titles = ["FULLSTACK DEVELOPER", "ML ENGINEER"];
+const titles = ["BACKEND DEVELOPER", "ML ENGINEER"];
 const currentText = ref("");
 let titleIndex = 0;
 let charIndex = 0;
@@ -474,7 +480,10 @@ const aboutStats = [
   { n: "20+", t: "Projects" },
 ];
 
-const hobbies = ["Matetee", "Gaming", "Open source"];
+const hobbies = computed<string[]>(() => {
+  const v = tm('about.hobbies') as unknown
+  return Array.isArray(v) ? (v as string[]) : []
+})
 
 const aboutCards = [
   { title: "Background", text: "Enterprise experience in Germany (adesso)." },
@@ -483,64 +492,51 @@ const aboutCards = [
   { title: "Languages", text: "Arabic (native), German (C1), English (B2)." },
 ];
 
-const stripStats = [
-  { n: "30+", t: "Technologies" },
-  { n: "4+", t: "Years Experience" },
-  { n: "10+", t: "Projects Completed" },
-  { n: "7", t: "Happy Clients" },
-];
+const stripStats = computed<{ n: string; t: string }[]>(() => {
+  const v = tm('skills.strip') as unknown
+  return Array.isArray(v) ? (v as { n: string; t: string }[]) : []
+})
 
-const skillGroups = [
-  {
-    title: "Frontend Development",
-    desc: "Creating modern, responsive user interfaces",
-    items: [
-      { name: "Vue.js", level: "Advanced" },
-      { name: "JavaScript", level: "Advanced" },
-      { name: "Twig", level: "Advanced" },
-      { name: "Responsive UI", level: "Advanced" },
-    ],
-  },
-  {
-    title: "Backend Development",
-    desc: "Building robust server-side applications and APIs",
-    items: [
-      { name: "PHP", level: "Advanced" },
-      { name: "Symfony", level: "Advanced" },
-      { name: "Drupal", level: "Advanced" },
-      { name: "SQL", level: "Advanced" },
-      { name: "REST APIs", level: "Advanced" },
-    ],
-  },
-  {
-    title: "Data / AI (side projects)",
-    desc: "Pragmatic ML engineering and data workflows",
-    items: [
-      { name: "Python", level: "Advanced" },
-      { name: "ASR", level: "Advanced" },
-      { name: "faster-whisper", level: "Advanced" },
-      { name: "Keyword Extraction", level: "Intermediate" },
-    ],
-  },
-  {
-    title: "DevOps & Quality",
-    desc: "Streamlining development and deployment workflows",
-    items: [
-      { name: "Git", level: "Advanced" },
-      { name: "Docker", level: "Intermediate" },
-      { name: "Testing", level: "Advanced" },
-      { name: "Linux", level: "Advanced" },
-    ],
-  },
-];
+const { t, tm } = useI18n()
 
+type ApiSkill = { name: string; category: string; level: string }
+const apiSkills = ref<ApiSkill[]>([])
+
+// Group membership and proficiency come from the database (editable in the
+// admin), while the group titles and level names come from the locale files so
+// they translate. Previously this list was hardcoded here, which is why editing
+// skills in the backend changed nothing a visitor could see.
+const SKILL_CATEGORY_ORDER = ["frontend", "backend", "data_ai", "devops"] as const
+
+const skillGroups = computed(() =>
+  SKILL_CATEGORY_ORDER
+    .map((key) => ({
+      title: t(`skills.categories.${key}.title`),
+      desc: t(`skills.categories.${key}.desc`),
+      items: apiSkills.value
+        .filter((s) => s.category === key)
+        .map((s) => ({ name: s.name, level: t(`skills.levels.${s.level}`) })),
+    }))
+    .filter((g) => g.items.length > 0)
+)
+
+
+const cvAvailable = ref(false)
 
 async function loadPortfolio() {
-  const lang = (i18n.global.locale.value as "en" | "de") ?? "en"
-  const data = await getPortfolio(lang)
+  const data = await getPortfolio()
   projects.value = data.projects
   email.value = data.profile?.email ?? ""
   phone.value = data.profile?.phone ?? ""
+  cvAvailable.value = data.cv?.available ?? false
+  apiSkills.value = (data.skills ?? []) as ApiSkill[]
+}
+
+function downloadCv() {
+  if (!cvAvailable.value) return
+  // The endpoint responds with Content-Disposition: attachment, so navigating
+  // downloads the file without leaving the page.
+  window.location.href = cvDownloadUrl()
 }
 
 onMounted(loadPortfolio)
@@ -647,39 +643,6 @@ function onIconError(e: Event) {
 
 <style scoped>
 @reference "tailwindcss";
-.btn-primary {
-  @apply inline-flex items-center rounded-xl bg-white px-4 py-2 text-sm font-medium text-black hover:bg-white/90;
-}
-.btn-outline {
-  @apply inline-flex items-center rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-white/90 hover:bg-white/10;
-}
-.btn-ghost {
-  @apply inline-flex items-center rounded-xl px-3 py-2 text-sm font-medium text-white/80 hover:bg-white/5 hover:text-white;
-}
-.btn-icon {
-  @apply inline-flex h-10 w-10 items-center justify-center rounded-xl text-white/70 hover:bg-white/5 hover:text-white;
-}
-.btn-pill {
-  @apply rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10;
-}
-.btn-pill-active {
-  @apply rounded-full bg-white px-4 py-2 text-sm text-black hover:bg-white/90;
-}
-.badge-outline {
-  @apply inline-flex items-center rounded-full border border-white/15 bg-transparent px-3 py-1 text-xs text-white/70;
-}
-.badge-secondary {
-  @apply inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70;
-}
-.input {
-  @apply w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/35 outline-none focus:border-white/25 focus:ring-2 focus:ring-white/20;
-}
-.textarea {
-  @apply min-h-[140px] w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white placeholder:text-white/35 outline-none focus:border-white/25 focus:ring-2 focus:ring-white/20;
-}
-.link {
-  @apply h-auto p-0 text-xs text-white/55 hover:text-white underline underline-offset-4;
-}
 .cursor {
   animation: blink 0.7s infinite;
 }

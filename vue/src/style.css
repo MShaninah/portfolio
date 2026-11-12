@@ -124,3 +124,80 @@ button:focus-visible {
 .theme-invert .lang-switch svg {
   filter: none;
 }
+
+/* ---------------------------------------------------------------------------
+   Shared component classes.
+   These live here, NOT in a component's <style scoped> block. They were
+   previously defined inside App.vue's scoped styles, which meant they applied
+   to App.vue only -- AdminDashboard.vue used the same class names and got no
+   styling at all, which is why the admin panel looked unfinished.
+   --------------------------------------------------------------------------- */
+
+.btn-primary,
+.btn-outline,
+.btn-ghost,
+.btn-danger,
+.btn-icon,
+.btn-pill,
+.btn-pill-active {
+  @apply transition-colors duration-150;
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 focus-visible:ring-offset-2 focus-visible:ring-offset-black;
+  @apply disabled:cursor-not-allowed disabled:opacity-40;
+}
+
+.btn-primary {
+  @apply inline-flex items-center rounded-xl bg-white px-4 py-2 text-sm font-medium text-black hover:bg-white/90;
+}
+.btn-outline {
+  @apply inline-flex items-center rounded-xl border border-white/15 bg-white/5 px-4 py-2 text-sm font-medium text-white/90 hover:bg-white/10 hover:border-white/25;
+}
+.btn-ghost {
+  @apply inline-flex items-center rounded-xl px-3 py-2 text-sm font-medium text-white/80 hover:bg-white/5 hover:text-white;
+}
+/* Destructive actions must not look identical to ordinary ones. */
+.btn-danger {
+  @apply inline-flex items-center rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm font-medium text-red-300 hover:bg-red-500/20 hover:border-red-500/50 hover:text-red-200;
+  @apply focus-visible:ring-red-400/70;
+}
+.btn-icon {
+  @apply inline-flex items-center justify-center rounded-xl px-2 py-1 text-white/70 hover:bg-white/5 hover:text-white;
+}
+.btn-pill {
+  @apply rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm text-white/80 hover:bg-white/10;
+}
+.btn-pill-active {
+  @apply rounded-full bg-white px-4 py-2 text-sm text-black hover:bg-white/90;
+}
+
+.badge-outline {
+  @apply inline-flex items-center rounded-full border border-white/15 bg-transparent px-3 py-1 text-xs text-white/70;
+}
+.badge-secondary {
+  @apply inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70;
+}
+
+.input,
+.textarea,
+select.input {
+  @apply w-full rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm text-white;
+  @apply placeholder:text-white/35 outline-none transition-colors duration-150;
+  @apply hover:border-white/25;
+  @apply focus:border-white/40 focus:bg-white/10 focus:ring-2 focus:ring-white/30;
+  @apply disabled:cursor-not-allowed disabled:opacity-50;
+}
+.textarea {
+  @apply min-h-[140px];
+}
+/* Native dropdown options inherit the page background otherwise, which renders
+   dark-on-dark in several browsers. */
+select.input option {
+  @apply bg-neutral-900 text-white;
+}
+
+.field-label {
+  @apply mb-1 block text-xs font-medium uppercase tracking-wide text-white/50;
+}
+
+.link {
+  @apply h-auto p-0 text-xs text-white/55 hover:text-white underline underline-offset-4;
+}
