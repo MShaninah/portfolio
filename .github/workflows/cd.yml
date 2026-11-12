@@ -311,6 +311,17 @@ jobs:
           probe 'login rejects bad password' "$API_BASE/api/admin/login" 401 \
                 POST '{"password":"ci-smoke-deliberately-wrong"}'
 
+          http_site="${SITE_BASE/https:/http:}"
+          redirect=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "$http_site/" || echo 000)
+          case "$redirect" in
+            30[1278])
+              echo "ok  http redirects to https -> $redirect"
+              ;;
+            *)
+              echo "::warning::$http_site answered $redirect instead of redirecting to https, so anyone typing the bare domain gets a plain-HTTP page and a \"Not secure\" warning. Enable the permanent SEO-safe 301 redirect from HTTP to HTTPS in Plesk for this domain. Not failing the deploy: the release itself is fine."
+              ;;
+          esac
+
       - name: Roll back
         if: failure()
         run: |
