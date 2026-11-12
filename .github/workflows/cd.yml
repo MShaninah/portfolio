@@ -202,7 +202,7 @@ jobs:
           } | ssh target bash -s
 
           if [ "$code" != 200 ]; then
-            echo "::error::$API_BASE does not serve $API_DIR/current/public - a file placed there answered $code, so the vhost document root points somewhere else. In Plesk, open Websites & Domains, the API domain, Hosting Settings, and set the document root to current/public. Stopping now, before the database is migrated."
+            echo "::error::$API_BASE does not serve $API_DIR/current/public - a file placed there answered $code, so the vhost document root points somewhere else. In Plesk, open Websites & Domains, the API domain, Hosting Settings, and set the document root to current/public. Plesk states this relative to the subscription root on some versions, so the value may need to be api.mshaninah.com/current/public - compare it with the main domain's, which is a folder directly under the subscription root. Stopping now, before the database is migrated."
             exit 1
           fi
 
@@ -223,7 +223,7 @@ jobs:
             --exclude='.htaccess' \
             -e ssh vue/dist/ "target:$WEB_DOCROOT/"
 
-      - name: Migrate and activate
+      - name: Migrate
         run: |
           set -euo pipefail
           {
@@ -232,11 +232,6 @@ jobs:
             cat <<'REMOTE'
           set -euo pipefail
           cd "$API_DIR"
-
-          if [ -L current ]; then
-            basename "$(readlink -f current)" > .previous_release
-          fi
-          echo "activating $RELEASE (previous: $(cat .previous_release 2>/dev/null || echo none))"
 
           ln -sfn "$API_DIR/shared/.env.local" "releases/$RELEASE/.env.local"
 
@@ -248,6 +243,25 @@ jobs:
 
           "$DEPLOY_PHP" "releases/$RELEASE/bin/console" \
             doctrine:migrations:migrate --env=prod --no-interaction --allow-no-migration
+          REMOTE
+          } | ssh target bash -s
+          echo "MIGRATED=yes" >> "$GITHUB_ENV"
+
+      - name: Activate
+        run: |
+          set -euo pipefail
+          {
+            printf 'API_DIR=%q RELEASE=%q\n' "$API_DIR" "$RELEASE"
+            cat <<'REMOTE'
+          set -euo pipefail
+          cd "$API_DIR"
+
+          if [ -L current ]; then
+            basename "$(readlink -f current)" > .previous_release
+          else
+            rm -f .previous_release
+          fi
+          echo "activating $RELEASE (previous: $(cat .previous_release 2>/dev/null || echo none))"
 
           ln -sfn "releases/$RELEASE" current.new && mv -Tf current.new current
           echo "current -> $(readlink current)"
@@ -255,6 +269,7 @@ jobs:
           ls -1dt releases/*/ | tail -n +6 | xargs -r rm -r --
           REMOTE
           } | ssh target bash -s
+          echo "ACTIVATED=yes" >> "$GITHUB_ENV"
 
       - name: Wait for the site to answer
         env:
@@ -300,7 +315,17 @@ jobs:
         if: failure()
         run: |
           set -euo pipefail
-          echo "::warning::deploy or smoke test failed - attempting rollback"
+
+          if [ "${ACTIVATED:-}" != yes ]; then
+            if [ "${MIGRATED:-}" = yes ]; then
+              echo "::error::failed after the schema was migrated but before the new release went live. The previous release is still serving and the schema is ahead of it - check it before retrying."
+            else
+              echo "::error::failed before anything on the server was changed, so there is nothing to roll back. The real error is in the failing step above."
+            fi
+            exit 1
+          fi
+
+          echo "::warning::deploy failed after activation - attempting rollback"
           out=$(
           {
             printf 'API_DIR=%q\n' "$API_DIR"
