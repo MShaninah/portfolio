@@ -107,7 +107,11 @@ jobs:
     runs-on: ubuntu-latest
     services:
       mysql:
-        image: mysql:8.0.36
+        # Pinned to what production runs. Verifying migrations against
+        # MySQL 8 while the server is 5.7 lets version-specific SQL pass
+        # CI and fail on deploy. 5.7 is end-of-life: when the host offers
+        # MySQL 8, raise this and DATABASE_URL's serverVersion together.
+        image: mysql:5.7.44
         env:
           MYSQL_ROOT_PASSWORD: root
           MYSQL_DATABASE: portfolio

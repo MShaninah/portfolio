@@ -40,8 +40,13 @@ when@prod:
                 channels: ["!deprecation"]
                 buffer_size: 50 # How many messages should be saved? Prevent memory leaks
             nested:
-                type: stream
-                path: php://stderr
+                # A file, not php://stderr. On the shared host the FPM process's
+                # stderr is not captured in any log we can read, so every
+                # production exception was simply lost. var/log is symlinked to
+                # shared/var/log, so this survives releases.
+                type: rotating_file
+                path: '%kernel.logs_dir%/%kernel.environment%.log'
+                max_files: 14
                 level: debug
                 formatter: monolog.formatter.json
             console:
