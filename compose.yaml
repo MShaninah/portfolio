@@ -45,23 +45,37 @@ services:
       # Symfony DB + Mail DSNs inside docker network
       DATABASE_URL: "mysql://portfolio:portfolio@db:3306/portfolio?serverVersion=8.0"
       MAILER_DSN: "smtp://mailhog:1025"
-      CONTACT_TO: "Shaninah.mohammad@gmail.com"
-      CONTACT_FROM: "no-reply@localhost"
+      CONTACT_TO: "mohamad@mshaninah.com"
+      CONTACT_FROM: "no-reply@mshaninah.com"
       # Optional if you have custom ini files
       PHP_INI_SCAN_DIR: ":/usr/local/etc/php/custom.d"
     networks:
       - portfolio_local
 
+  # One-shot tool container, used as:
+  #   docker compose run --rm php-cli 'php bin/console ...'
+  #
+  # It has no long-running command, so `restart: unless-stopped` made it exit
+  # and respawn forever. The profile keeps `docker compose up` from starting it
+  # at all, while `docker compose run` still works regardless of the profile.
   php-cli:
+    profiles: ["tools"]
     build:
       context: docker/php-cli
-    restart: unless-stopped
     depends_on:
       - db
       - mailhog
     volumes:
       - ./:/project
     working_dir: /project
+    # Must mirror php-fpm. Without these the console falls back to .env.local,
+    # whose DSN points at the host-side port mapping (127.0.0.1:6606) and does
+    # not resolve from inside the compose network.
+    environment:
+      APP_ENV: dev
+      APP_DEBUG: "1"
+      DATABASE_URL: "mysql://portfolio:portfolio@db:3306/portfolio?serverVersion=8.0.36&charset=utf8mb4"
+      MAILER_DSN: "smtp://mailhog:1025"
     entrypoint: ["/bin/sh", "-lc"]
     networks:
       - portfolio_local
