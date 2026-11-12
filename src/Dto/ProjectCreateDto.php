@@ -29,11 +29,15 @@ final class ProjectCreateDto
     public string $summary = '';
 
     /** @var list<string> */
+    // These are the "Key highlights" bullet points shown on a project card,
+    // not short technology tags. The previous 40-character cap was never hit
+    // because the admin could not reach this endpoint at all; once it could,
+    // it rejected every existing project, whose bullets run 58-119 characters.
     #[Assert\Count(max: 50)]
     #[Assert\All([
         new Assert\Type('string'),
         new Assert\NotBlank(),
-        new Assert\Length(max: 40),
+        new Assert\Length(max: 200),
     ])]
     public array $stack = [];
 

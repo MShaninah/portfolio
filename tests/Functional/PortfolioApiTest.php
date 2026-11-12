@@ -209,6 +209,63 @@ final class PortfolioApiTest extends WebTestCase
         self::assertSame('Alpha', $project->getTitle(), 'omitted fields must stay untouched');
     }
 
+    public function testTheRepositoryLinkCanBeAddedAndRemoved(): void
+    {
+        // The admin exposes a single "Repository URL" field which it maps onto
+        // the API's links array, so that round trip has to hold.
+        $this->client->request('PUT', '/api/admin/projects/alpha', server: $this->authHeaders(), content: json_encode([
+            'links' => [['label' => 'Repo', 'href' => 'https://github.com/example/alpha']],
+        ], \JSON_THROW_ON_ERROR));
+        self::assertResponseIsSuccessful();
+
+        $this->em->clear();
+        $project = $this->em->getRepository(Project::class)->findOneBy(['slug' => 'alpha']);
+        self::assertInstanceOf(Project::class, $project);
+        self::assertSame(
+            [['label' => 'Repo', 'href' => 'https://github.com/example/alpha']],
+            $project->getLinks(),
+        );
+
+        // Clearing the field sends an empty array, which must remove the link.
+        $this->client->request('PUT', '/api/admin/projects/alpha', server: $this->authHeaders(), content: json_encode([
+            'links' => [],
+        ], \JSON_THROW_ON_ERROR));
+        self::assertResponseIsSuccessful();
+
+        $this->em->clear();
+        $project = $this->em->getRepository(Project::class)->findOneBy(['slug' => 'alpha']);
+        self::assertInstanceOf(Project::class, $project);
+        self::assertSame([], $project->getLinks());
+    }
+
+    public function testHighlightsAcceptRealBulletPoints(): void
+    {
+        // Regression guard: highlights are sentences, not tech tags. A 40-char
+        // cap made every existing project uneditable through the admin.
+        $bullet = 'Release blocked unless the target PHP carries the php2shell RCE fixes (CVE-2026-109618)';
+        self::assertGreaterThan(40, \strlen($bullet));
+
+        $this->client->request('PUT', '/api/admin/projects/alpha', server: $this->authHeaders(), content: json_encode([
+            'stack' => [$bullet],
+        ], \JSON_THROW_ON_ERROR));
+
+        self::assertResponseIsSuccessful();
+
+        $this->em->clear();
+        $project = $this->em->getRepository(Project::class)->findOneBy(['slug' => 'alpha']);
+        self::assertInstanceOf(Project::class, $project);
+        self::assertSame([$bullet], $project->getHighlights());
+    }
+
+    public function testAbsurdlyLongHighlightsAreStillRejected(): void
+    {
+        $this->client->request('PUT', '/api/admin/projects/alpha', server: $this->authHeaders(), content: json_encode([
+            'stack' => [str_repeat('x', 201)],
+        ], \JSON_THROW_ON_ERROR));
+
+        self::assertResponseStatusCodeSame(Response::HTTP_UNPROCESSABLE_ENTITY);
+    }
+
     public function testAProjectCanBeDeleted(): void
     {
         $this->client->request('DELETE', '/api/admin/projects/alpha', server: $this->authHeaders());
