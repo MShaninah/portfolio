@@ -6,6 +6,8 @@ namespace App\Service;
 
 use App\Dto\SkillsUpdateDto;
 use App\Entity\Skill;
+use App\Enum\SkillCategory;
+use App\Enum\SkillLevel;
 use App\Repository\SkillRepository;
 use Doctrine\ORM\EntityManagerInterface;
 
@@ -18,36 +20,49 @@ final readonly class AdminSkillsService
     }
 
     /**
-     * Replaces the stored skill set, adding and removing only what changed.
+     * Replaces the stored skill set, adding, updating and removing only what
+     * actually changed.
      *
-     * @return list<string>
+     * @return list<array{name: string, category: string, level: string}>
      */
     public function replaceAll(SkillsUpdateDto $dto): array
     {
-        $newNames = array_values(array_unique($dto->skills));
-        $existingSkills = $this->skills->findAll();
-
-        $existingMap = [];
-        foreach ($existingSkills as $skill) {
-            $existingMap[$skill->getName()] = $skill;
+        /** @var array<string, array{name: string, category: string, level: string}> $wanted */
+        $wanted = [];
+        foreach ($dto->skills as $entry) {
+            // Last one wins, so a duplicated name cannot create two rows and
+            // violate the unique index.
+            $wanted[$entry['name']] = [
+                'name' => $entry['name'],
+                'category' => $entry['category'] ?? SkillCategory::Backend->value,
+                'level' => $entry['level'] ?? SkillLevel::Advanced->value,
+            ];
         }
 
-        foreach ($existingMap as $name => $entity) {
-            if (!in_array($name, $newNames, true)) {
+        $existing = [];
+        foreach ($this->skills->findAll() as $skill) {
+            $existing[$skill->getName()] = $skill;
+        }
+
+        foreach ($existing as $name => $entity) {
+            if (!isset($wanted[$name])) {
                 $this->em->remove($entity);
             }
         }
 
-        foreach ($newNames as $name) {
-            if (!isset($existingMap[$name])) {
-                $s = new Skill();
-                $s->setName($name);
-                $this->em->persist($s);
+        foreach ($wanted as $name => $entry) {
+            $entity = $existing[$name] ?? new Skill()->setName($name);
+            $entity
+                ->setCategory(SkillCategory::from($entry['category']))
+                ->setLevel(SkillLevel::from($entry['level']));
+
+            if (!isset($existing[$name])) {
+                $this->em->persist($entity);
             }
         }
 
         $this->em->flush();
 
-        return $newNames;
+        return array_values($wanted);
     }
 }
