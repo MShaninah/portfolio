@@ -1,0 +1,19 @@
+# This document root holds the built Vue app. The API is served from the same
+# origin, under /api, rather than from api.mshaninah.com.
+#
+# The reason is the certificate: the host issues free Let's Encrypt only for
+# the main domain, never for a subdomain, so api.mshaninah.com had no way to
+# get a valid one. This domain's certificate is valid and renews itself, and
+# serving both from here means one certificate covers everything.
+#
+# Same-origin also removes CORS from the picture entirely.
+#
+# _api is a symlink to the current release's public/ directory, created by the
+# deploy. The application code itself stays outside this document root; only
+# public/ is ever reachable.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    RewriteCond %{REQUEST_URI} ^/api(/|$)
+    RewriteRule ^ /_api/index.php [QSA,L]
+</IfModule>
