@@ -1,4 +1,4 @@
-FROM php:8.5.12-cli-alpine
+FROM php:8.6.0RC7-cli-alpine
 
 RUN apk add --no-cache bash git unzip icu-dev libzip-dev oniguruma-dev \
   && docker-php-ext-configure intl \
