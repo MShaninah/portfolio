@@ -1,4 +1,4 @@
-FROM php:8.5.12-fpm-alpine
+FROM php:8.6.0RC7-fpm-alpine
 
 # PDO and Zend OPcache ship compiled in on php:8.5.x; installing them again
 # makes docker-php-ext-install fail with "cp: can't stat 'modules/*'".

@@ -10,7 +10,7 @@
 # Build headers are installed in a virtual package and removed again, so they
 # never reach the final image.
 # --------------------------------------------------------------------------
-FROM php:8.5.12-fpm-alpine AS base
+FROM php:8.6.0RC7-fpm-alpine AS base
 
 RUN set -eux; \
     # NOTE: in php:8.5.x both PDO and Zend OPcache are already compiled in.
